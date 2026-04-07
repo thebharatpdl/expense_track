@@ -15,14 +15,5 @@ export const colors = {
     Bills: '#FFF3E0',
     Health: '#FFE4E4',
     Other: '#F1EFE8',
-
-
- 
-  background: '#f8fafc',
-  primary: '#2563eb',
-  subtext: '#64748b',
-  card: '#ffffff',
-  text: '#0f172a',
-
   },
 }

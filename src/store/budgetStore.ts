@@ -10,7 +10,7 @@ interface BudgetStore {
 export const useBudgetStore = create<BudgetStore>()(
   persist(
     (set) => ({
-      monthlyLimit: 15000,
+      monthlyLimit: 0,
 
       setMonthlyLimit: (limit) =>
         set({ monthlyLimit: limit }),

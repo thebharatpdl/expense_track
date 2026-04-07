@@ -7,6 +7,7 @@ export type Category =
   | 'Other'
 
 export interface Expense {
+  description: any
   id: string
   title: string
   amount: number

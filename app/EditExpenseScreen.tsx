@@ -1,14 +1,14 @@
 import { useNavigation, useRoute } from '@react-navigation/native'
 import React, { useState } from 'react'
 import {
-    ScrollView,
-    StyleSheet,
-    Text, TextInput, TouchableOpacity,
-    View
+  ScrollView,
+  StyleSheet,
+  Text, TextInput, TouchableOpacity,
+  View
 } from 'react-native'
-import { useExpenseStore } from '../store/expenseStore'
-import { colors } from '../theme/colors'
-import { Category, Expense } from '../types'
+import { useExpenseStore } from '../src/store/expenseStore'
+import { colors } from '../src/theme/colors'
+import { Category, Expense } from '../src/types'
 
 const categories: Category[] = ['Food', 'Transport', 'Shopping', 'Bills', 'Health', 'Other']
 const catIcons: Record<Category, string> = {
