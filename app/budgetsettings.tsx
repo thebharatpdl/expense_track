@@ -1,6 +1,7 @@
 import { useBudgetStore } from '@/src/store/budgetStore'
 import { useExpenseStore } from '@/src/store/expenseStore'
 import { colors } from '@/src/theme/colors'
+import { LinearGradient } from 'expo-linear-gradient'
 import { router } from 'expo-router'
 import React, { useState } from 'react'
 import {
@@ -81,10 +82,14 @@ export default function BudgetSettingsScreen() {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-
-          {/* Current Status Card */}
-          <View style={styles.statusCard}>
-            <Text style={styles.statusTitle}>This month's usage</Text>
+          {/* ── Status Card ── */}
+          <LinearGradient
+            colors={['#7C6FFF', '#4A44B5']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.statusCard}
+          >
+            <Text style={styles.statusLabel}>THIS MONTH'S USAGE</Text>
 
             <View style={styles.statusRow}>
               <View>
@@ -94,7 +99,7 @@ export default function BudgetSettingsScreen() {
               <View style={styles.statusDivider} />
               <View style={{ alignItems: 'flex-end' }}>
                 <Text style={styles.statusSub}>Budget limit</Text>
-                <Text style={[styles.statusVal, { color: colors.primary }]}>
+                <Text style={[styles.statusVal, { color: '#86EFAC' }]}>
                   {monthlyLimit > 0 ? `₹${monthlyLimit.toLocaleString()}` : 'Not set'}
                 </Text>
               </View>
@@ -103,12 +108,10 @@ export default function BudgetSettingsScreen() {
             {monthlyLimit > 0 && (
               <>
                 <View style={styles.track}>
-                  <View
-                    style={[styles.fill, {
-                      width: `${pct}%`,
-                      backgroundColor: getBudgetColor(),
-                    }]}
-                  />
+                  <View style={[styles.fill, {
+                    width: `${pct}%`,
+                    backgroundColor: getBudgetColor(),
+                  }]} />
                 </View>
                 <View style={styles.pctRow}>
                   <Text style={[styles.pctText, { color: getBudgetColor() }]}>
@@ -126,13 +129,13 @@ export default function BudgetSettingsScreen() {
             {monthlyLimit === 0 && (
               <View style={styles.notSetBanner}>
                 <Text style={styles.notSetText}>
-                  ⚠️ No budget set yet. Set one below to track your spending.
+                  ⚠️  No budget set yet. Set one below to start tracking.
                 </Text>
               </View>
             )}
-          </View>
+          </LinearGradient>
 
-          {/* Input */}
+          {/* ── Input ── */}
           <Text style={styles.sectionLabel}>SET MONTHLY BUDGET</Text>
           <View style={styles.inputCard}>
             <View style={styles.inputRow}>
@@ -143,12 +146,15 @@ export default function BudgetSettingsScreen() {
                 onChangeText={setInput}
                 keyboardType="numeric"
                 placeholder="Enter amount"
-                placeholderTextColor={colors.subtext + '80'}
+                placeholderTextColor={colors.subtext + '60'}
                 returnKeyType="done"
                 onSubmitEditing={handleSave}
               />
               {input.length > 0 && (
-                <TouchableOpacity onPress={() => setInput('')} style={styles.clearInput}>
+                <TouchableOpacity
+                  onPress={() => setInput('')}
+                  style={styles.clearInputBtn}
+                >
                   <Text style={styles.clearInputText}>✕</Text>
                 </TouchableOpacity>
               )}
@@ -156,17 +162,31 @@ export default function BudgetSettingsScreen() {
 
             {input.length > 0 && parseFloat(input) > 0 && (
               <View style={styles.previewRow}>
-                <Text style={styles.previewText}>
-                  Daily limit → ₹{Math.round(parseFloat(input) / 30).toLocaleString()}
-                </Text>
-                <Text style={styles.previewText}>
-                  Weekly limit → ₹{Math.round(parseFloat(input) / 4).toLocaleString()}
-                </Text>
+                <View style={styles.previewChip}>
+                  <Text style={styles.previewLabel}>Daily</Text>
+                  <Text style={styles.previewVal}>
+                    ₹{Math.round(parseFloat(input) / 30).toLocaleString()}
+                  </Text>
+                </View>
+                <View style={styles.previewDivider} />
+                <View style={styles.previewChip}>
+                  <Text style={styles.previewLabel}>Weekly</Text>
+                  <Text style={styles.previewVal}>
+                    ₹{Math.round(parseFloat(input) / 4).toLocaleString()}
+                  </Text>
+                </View>
+                <View style={styles.previewDivider} />
+                <View style={styles.previewChip}>
+                  <Text style={styles.previewLabel}>Monthly</Text>
+                  <Text style={styles.previewVal}>
+                    ₹{Math.round(parseFloat(input)).toLocaleString()}
+                  </Text>
+                </View>
               </View>
             )}
           </View>
 
-          {/* Quick Presets */}
+          {/* ── Presets ── */}
           <Text style={styles.sectionLabel}>QUICK SELECT</Text>
           <View style={styles.presets}>
             {PRESETS.map((p) => {
@@ -178,6 +198,9 @@ export default function BudgetSettingsScreen() {
                   onPress={() => setInput(String(p))}
                   activeOpacity={0.7}
                 >
+                  {isActive && (
+                    <Text style={styles.presetCheck}>✓</Text>
+                  )}
                   <Text style={[styles.presetAmount, isActive && styles.presetAmountActive]}>
                     ₹{(p / 1000).toFixed(0)}k
                   </Text>
@@ -189,29 +212,43 @@ export default function BudgetSettingsScreen() {
             })}
           </View>
 
-          {/* Tips */}
+          {/* ── Tips ── */}
           <Text style={styles.sectionLabel}>TIPS</Text>
           <View style={styles.tipCard}>
-            <Text style={styles.tipRow}>💡 Set budget 10% lower than your actual limit</Text>
-            <Text style={styles.tipRow}>📅 Review your spending every Sunday</Text>
-            <Text style={styles.tipRow}>🎯 Track daily to stay on target</Text>
-            <Text style={styles.tipRow}>🔔 You'll see warnings at 80% and 100%</Text>
+            {[
+              { icon: '💡', text: 'Set budget 10% lower than your actual limit' },
+              { icon: '📅', text: 'Review your spending every Sunday' },
+              { icon: '🎯', text: 'Track daily to stay on target' },
+              { icon: '🔔', text: "You'll see warnings at 80% and 100%" },
+            ].map((tip, i) => (
+              <View key={i} style={[styles.tipRow, i < 3 && styles.tipRowBorder]}>
+                <Text style={styles.tipIcon}>{tip.icon}</Text>
+                <Text style={styles.tipText}>{tip.text}</Text>
+              </View>
+            ))}
           </View>
 
-          {/* Save Button */}
+          {/* ── Save Button ── */}
           <TouchableOpacity
             style={[styles.saveBtn, !input && styles.saveBtnDisabled]}
             onPress={handleSave}
             disabled={!input}
-            activeOpacity={0.8}
+            activeOpacity={0.85}
           >
-            <Text style={styles.saveBtnText}>Save Budget</Text>
+            <LinearGradient
+              colors={['#7C6FFF', '#4A44B5']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.saveGradient}
+            >
+              <Text style={styles.saveBtnText}>Save Budget</Text>
+            </LinearGradient>
           </TouchableOpacity>
 
-          {/* Clear Button */}
+          {/* ── Clear Button ── */}
           {monthlyLimit > 0 && (
             <TouchableOpacity style={styles.clearBtn} onPress={handleClear}>
-              <Text style={styles.clearBtnText}>Clear budget limit</Text>
+              <Text style={styles.clearBtnText}>🗑  Clear budget limit</Text>
             </TouchableOpacity>
           )}
 
@@ -222,161 +259,277 @@ export default function BudgetSettingsScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.background },
+  safe: { flex: 1, backgroundColor: '#F1F5F9' },
   content: { padding: 16, paddingBottom: 48 },
 
+  // ── Status Card ──
   statusCard: {
-    backgroundColor: colors.card,
-    borderRadius: 20,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: colors.border,
-    marginBottom: 24,
+    borderRadius: 24,
+    padding: 22,
+    marginBottom: 28,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    elevation: 8,
   },
-  statusTitle: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: colors.subtext,
-    letterSpacing: 0.5,
-    marginBottom: 16,
+  statusLabel: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1.4,
+    marginBottom: 18,
   },
   statusRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 20,
   },
   statusDivider: {
     width: 1,
-    height: 40,
-    backgroundColor: colors.border,
+    height: 44,
+    backgroundColor: 'rgba(255,255,255,0.25)',
   },
-  statusSub: { fontSize: 12, color: colors.subtext, marginBottom: 4 },
-  statusVal: { fontSize: 22, fontWeight: '700', color: colors.text },
+  statusSub: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.65)',
+    marginBottom: 5,
+    fontWeight: '500',
+  },
+  statusVal: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#fff',
+  },
   track: {
-    backgroundColor: '#eee',
+    backgroundColor: 'rgba(255,255,255,0.25)',
     borderRadius: 99,
     height: 10,
     overflow: 'hidden',
-    marginBottom: 8,
+    marginBottom: 10,
   },
   fill: { height: 10, borderRadius: 99 },
   pctRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
   },
-  pctText: { fontSize: 13, fontWeight: '600' },
-  remainText: { fontSize: 12, color: colors.subtext },
+  pctText: { fontSize: 13, fontWeight: '700' },
+  remainText: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.7)',
+    fontWeight: '500',
+  },
   notSetBanner: {
-    backgroundColor: '#FFF3E0',
-    borderRadius: 10,
-    padding: 12,
-    marginTop: 8,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.25)',
   },
-  notSetText: { fontSize: 13, color: '#B45309', lineHeight: 20 },
+  notSetText: {
+    fontSize: 13,
+    color: '#fff',
+    lineHeight: 20,
+    fontWeight: '500',
+  },
 
+  // ── Section Label ──
   sectionLabel: {
     fontSize: 11,
-    fontWeight: '600',
+    fontWeight: '700',
     color: colors.subtext,
-    letterSpacing: 0.8,
-    marginBottom: 10,
+    letterSpacing: 1.2,
+    marginBottom: 12,
     marginTop: 4,
   },
 
+  // ── Input Card ──
   inputCard: {
-    backgroundColor: colors.card,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: colors.border,
-    marginBottom: 24,
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: colors.primary + '30',
+    marginBottom: 28,
     overflow: 'hidden',
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 3,
   },
   inputRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
+    paddingHorizontal: 18,
     paddingVertical: 4,
   },
   rupee: {
-    fontSize: 26,
-    fontWeight: '700',
+    fontSize: 30,
+    fontWeight: '800',
     color: colors.primary,
     marginRight: 8,
   },
   input: {
     flex: 1,
-    fontSize: 28,
-    fontWeight: '700',
+    fontSize: 36,
+    fontWeight: '800',
     color: colors.text,
     paddingVertical: 16,
   },
-  clearInput: { padding: 8 },
-  clearInputText: { fontSize: 16, color: colors.subtext },
+  clearInputBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  clearInputText: {
+    fontSize: 12,
+    color: colors.subtext,
+    fontWeight: '700',
+  },
   previewRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingBottom: 14,
-    paddingTop: 4,
-    borderTopWidth: 0.5,
-    borderTopColor: colors.border,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+    paddingVertical: 14,
+    paddingHorizontal: 18,
   },
-  previewText: { fontSize: 12, color: colors.primary, fontWeight: '500' },
+  previewChip: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  previewLabel: {
+    fontSize: 10,
+    color: colors.subtext,
+    fontWeight: '600',
+    letterSpacing: 0.3,
+    marginBottom: 3,
+  },
+  previewVal: {
+    fontSize: 14,
+    color: colors.primary,
+    fontWeight: '800',
+  },
+  previewDivider: {
+    width: 1,
+    backgroundColor: '#F1F5F9',
+    marginVertical: 2,
+  },
 
+  // ── Presets ──
   presets: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 10,
-    marginBottom: 24,
+    marginBottom: 28,
   },
   preset: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 14,
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.border,
+    paddingHorizontal: 12,
+    paddingVertical: 14,
+    borderRadius: 16,
+    backgroundColor: '#fff',
+    borderWidth: 1.5,
+    borderColor: '#E8ECF0',
     alignItems: 'center',
     minWidth: '30%',
     flex: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 1,
   },
   presetActive: {
     backgroundColor: colors.primary,
     borderColor: colors.primary,
+    shadowColor: colors.primary,
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  presetCheck: {
+    fontSize: 10,
+    color: 'rgba(255,255,255,0.8)',
+    fontWeight: '700',
+    marginBottom: 2,
   },
   presetAmount: {
-    fontSize: 16,
-    fontWeight: '700',
+    fontSize: 17,
+    fontWeight: '800',
     color: colors.text,
   },
   presetAmountActive: { color: '#fff' },
-  presetLabel: { fontSize: 11, color: colors.subtext, marginTop: 2 },
-  presetLabelActive: { color: 'rgba(255,255,255,0.8)' },
+  presetLabel: {
+    fontSize: 10,
+    color: colors.subtext,
+    marginTop: 3,
+    fontWeight: '600',
+  },
+  presetLabelActive: { color: 'rgba(255,255,255,0.75)' },
 
+  // ── Tips ──
   tipCard: {
-    backgroundColor: '#EDE9FF',
-    borderRadius: 14,
-    padding: 16,
-    gap: 8,
-    marginBottom: 24,
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    overflow: 'hidden',
+    marginBottom: 28,
+    borderWidth: 1,
+    borderColor: '#EEF2F7',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
   },
   tipRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    gap: 12,
+  },
+  tipRowBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  tipIcon: { fontSize: 18 },
+  tipText: {
     fontSize: 13,
-    color: '#534AB7',
+    color: colors.text,
+    fontWeight: '500',
+    flex: 1,
     lineHeight: 20,
   },
 
+  // ── Save Button ──
   saveBtn: {
-    backgroundColor: colors.primary,
-    borderRadius: 14,
-    padding: 16,
-    alignItems: 'center',
+    borderRadius: 18,
+    overflow: 'hidden',
     marginBottom: 12,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+    elevation: 6,
   },
   saveBtnDisabled: { opacity: 0.4 },
-  saveBtnText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  saveGradient: {
+    paddingVertical: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  saveBtnText: {
+    color: '#fff',
+    fontSize: 17,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
 
+  // ── Clear Button ──
   clearBtn: {
     padding: 14,
     alignItems: 'center',
@@ -384,6 +537,6 @@ const styles = StyleSheet.create({
   clearBtnText: {
     fontSize: 14,
     color: colors.expense,
-    fontWeight: '500',
+    fontWeight: '600',
   },
 })
