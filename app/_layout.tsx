@@ -4,7 +4,6 @@ import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { colors } from '@/src/theme/colors';
 
 export const unstable_settings = {
   anchor: '(tabs)',
@@ -16,24 +15,61 @@ export default function RootLayout() {
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <Stack>
+        {/* Main Tabs - Home screen with expenses and groups */}
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        
+        {/* Modal Screen */}
         <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
+
+        {/* Budget Settings Screen */}
         <Stack.Screen
           name="budgetsettings"
           options={{
-            title: 'Budget Settings',
-            headerTintColor: colors.primary,
-            headerBackTitle: 'Back',
-            headerStyle: { backgroundColor: colors.card },
+                headerShown: false,
+       
+            presentation: 'card',
           }}
         />
+
+        {/* Edit Expense Screen */}
         <Stack.Screen
           name="editexpense"
           options={{
-            title: 'Edit Expense',
-            headerTintColor: colors.primary,
-            headerBackTitle: 'Back',
-            headerStyle: { backgroundColor: colors.card },
+        
+     headerShown: false,
+       
+            presentation: 'card',
+
+          }}
+        />
+
+        {/* Add Expense Screen */}
+        <Stack.Screen
+          name="add-expense"
+          options={{
+     headerShown: false,
+       
+            presentation: 'card',        
+          }}
+        />
+
+        {/* Group Creation Screen */}
+        <Stack.Screen
+          name="Group_creation"
+          options={{
+     headerShown: false,
+       
+            presentation: 'card',           
+          }}
+        />
+
+        {/* Group Expense Screen */}
+        <Stack.Screen
+          name="Group_expense"
+          options={{
+     headerShown: false,
+       
+            presentation: 'card',           
           }}
         />
       </Stack>

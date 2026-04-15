@@ -1,21 +1,34 @@
-import { Tabs } from 'expo-router'
-import React from 'react'
-import 'react-native-get-random-values'; // required for uuid globally
-
 import { HapticTab } from '@/components/haptic-tab'
-import { IconSymbol } from '@/components/ui/icon-symbol'
 import { Colors } from '@/constants/theme'
 import { useColorScheme } from '@/hooks/use-color-scheme'
+import { Ionicons } from '@expo/vector-icons'
+import { Tabs } from 'expo-router'
+import React from 'react'
+import 'react-native-get-random-values'
 
 export default function TabLayout() {
   const colorScheme = useColorScheme()
+  const tint = Colors[colorScheme ?? 'light'].tint
 
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
+        tabBarActiveTintColor: tint,
+        tabBarInactiveTintColor: '#94A3B8',
         headerShown: false,
         tabBarButton: HapticTab,
+        tabBarStyle: {
+          backgroundColor: colorScheme === 'dark' ? '#1E1E2E' : '#ffffff',
+          borderTopWidth: 1,
+          borderTopColor: colorScheme === 'dark' ? '#2E2E3E' : '#F1F5F9',
+          height: 60,
+          paddingBottom: 8,
+          paddingTop: 6,
+        },
+        tabBarLabelStyle: {
+          fontSize: 11,
+          fontWeight: '600',
+        },
       }}
     >
       {/* Home */}
@@ -23,19 +36,19 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'Home',
-          tabBarIcon: ({ color }) => (
-            <IconSymbol size={28} name="house.fill" color={color} />
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="home" size={size} color={color} />
           ),
         }}
       />
 
       {/* Add Expense */}
       <Tabs.Screen
-        name="add"
+        name="addexpense"
         options={{
           title: 'Add',
           tabBarIcon: ({ color }) => (
-            <IconSymbol size={28} name="plus.circle.fill" color={color} />
+            <Ionicons name="add-circle" size={30} color={color} />
           ),
         }}
       />
@@ -45,8 +58,8 @@ export default function TabLayout() {
         name="summary"
         options={{
           title: 'Summary',
-          tabBarIcon: ({ color }) => (
-            <IconSymbol size={28} name="chart.pie.fill" color={color} />
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="pie-chart" size={size} color={color} />
           ),
         }}
       />

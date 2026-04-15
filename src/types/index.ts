@@ -1,3 +1,4 @@
+// src/types/index.ts
 export type Category =
   | 'Food'
   | 'Transport'
@@ -7,13 +8,15 @@ export type Category =
   | 'Other'
 
 export interface Expense {
-  description: any
   id: string
   title: string
   amount: number
   category: Category
   date: string
   createdAt: string
+  description?: string
+  groupId?: string  // Made optional
+  paidBy?: string  // Who paid for this expense
 }
 
 export interface Budget {
