@@ -1,79 +1,97 @@
+// app/_layout.tsx
+import { auth } from '@/src/config/firebase';
+import { store } from '@/src/store';
+import { useAppDispatch, useAppSelector } from '@/src/store/hooks';
+import { clearUser, setLoading, setUser } from '@/src/store/slice/authSlice';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { Stack } from 'expo-router';
+import { Stack, router, useRootNavigationState } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { useEffect } from 'react';
+import { ActivityIndicator, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import 'react-native-get-random-values';
 import 'react-native-reanimated';
+import { Provider } from 'react-redux';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 export const unstable_settings = {
-  anchor: '(tabs)',
+  initialRouteName: '(tabs)',
 };
 
-export default function RootLayout() {
+// Auth wrapper component
+function AuthWrapper({ children }: { children: React.ReactNode }) {
+  const dispatch = useAppDispatch();
+  const { isAuthenticated, loading } = useAppSelector(state => state.auth);
+  const navigationState = useRootNavigationState();
+
+  useEffect(() => {
+    const unsubscribe = auth.onAuthStateChanged((user) => {
+      if (user) {
+        dispatch(setUser(user));
+      } else {
+        dispatch(clearUser());
+      }
+      dispatch(setLoading(false));
+    });
+
+    return () => unsubscribe();
+  }, [dispatch]);
+
+  useEffect(() => {
+    // Only navigate after the root layout is mounted
+    if (!navigationState?.key) return;
+    
+    if (!loading && !isAuthenticated) {
+      router.replace('/login');
+    }
+  }, [isAuthenticated, loading, navigationState?.key]);
+
+  if (loading) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" color="#1D9E75" />
+      </View>
+    );
+  }
+
+  return <>{children}</>;
+}
+
+// Main layout content
+function RootLayoutContent() {
   const colorScheme = useColorScheme();
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-        <Stack>
-          {/* Auth Screens - No Header */}
-          <Stack.Screen name="login" options={{ headerShown: false }} />
-          <Stack.Screen name="register" options={{ headerShown: false }} />
+    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+      <Stack>
+        {/* Auth Screens */}
+        <Stack.Screen name="login" options={{ headerShown: false }} />
+        <Stack.Screen name="register" options={{ headerShown: false }} />
 
-          {/* Main Tabs - Home screen with expenses and groups */}
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          
-          {/* Modal Screen */}
-          <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal', headerShown: false }} />
+        {/* Main Tabs */}
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        
+        {/* Other Screens */}
+        <Stack.Screen name="add-expense" options={{ headerShown: false, presentation: 'card' }} />
+        <Stack.Screen name="Group_creation" options={{ headerShown: false, presentation: 'card' }} />
+        <Stack.Screen name="Group_expense" options={{ headerShown: false, presentation: 'card' }} />
+        <Stack.Screen name="join-group" options={{ headerShown: false, presentation: 'card' }} />
+      </Stack>
+      <StatusBar style="auto" />
+    </ThemeProvider>
+  );
+}
 
-          {/* Budget Settings Screen */}
-          <Stack.Screen
-            name="budgetsettings"
-            options={{
-              headerShown: false,
-              presentation: 'card',
-            }}
-          />
-
-          {/* Edit Expense Screen */}
-          <Stack.Screen
-            name="editexpense"
-            options={{
-              headerShown: false,
-              presentation: 'card',
-            }}
-          />
-
-          {/* Add Expense Screen */}
-          <Stack.Screen
-            name="add-expense"
-            options={{
-              headerShown: false,
-              presentation: 'card',        
-            }}
-          />
-
-          {/* Group Creation Screen */}
-          <Stack.Screen
-            name="Group_creation"
-            options={{
-              headerShown: false,
-              presentation: 'card',           
-            }}
-          />
-
-          {/* Group Expense Screen */}
-          <Stack.Screen
-            name="Group_expense"
-            options={{
-              headerShown: false,
-              presentation: 'card',           
-            }}
-          />
-        </Stack>
-        <StatusBar style="auto" />
-      </ThemeProvider>
-    </GestureHandlerRootView>
+// Root layout with Redux Provider
+export default function RootLayout() {
+  return (
+    <Provider store={store}>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <AuthWrapper>
+          <RootLayoutContent />
+        </AuthWrapper>
+      </GestureHandlerRootView>
+    </Provider>
   );
 }

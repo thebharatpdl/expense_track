@@ -1,7 +1,7 @@
 // app/add-expense.tsx
-import { addGroupExpense } from '@/src/services/groupService'; // Add this import
+import { addGroupExpense } from '@/src/services/groupService';
 import { addUserExpense } from '@/src/services/userExpenseService';
-import { useAuthStore } from '@/src/store/authStore';
+import { useAppSelector } from '@/src/store/hooks';
 import { colors } from '@/src/theme/colors';
 import { Category } from '@/src/types';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -20,6 +20,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import 'react-native-get-random-values';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 const categories: Category[] = ['Food', 'Transport', 'Shopping', 'Bills', 'Health', 'Other'];
@@ -43,7 +44,7 @@ const categoryColors: Record<Category, string> = {
 };
 
 export default function AddExpenseScreen() {
-  const { user } = useAuthStore();
+  const { user } = useAppSelector(state => state.auth);
   const { groupId, personName } = useLocalSearchParams();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -76,7 +77,6 @@ export default function AddExpenseScreen() {
 
     setIsLoading(true);
     try {
-      // Build expense object
       const expenseData: any = {
         title: title.trim(),
         amount: amountValue,
@@ -86,23 +86,16 @@ export default function AddExpenseScreen() {
         paidByName: (personName as string) || user.displayName || 'You',
       };
       
-      // Only add description if it has value
       if (description.trim()) {
         expenseData.description = description.trim();
       }
       
-      // Check if this is a group expense
       if (groupId) {
-        // Save to GROUP expenses in Firebase
         expenseData.groupId = groupId as string;
-        expenseData.splitAmong = []; // Add member UIDs here if needed
-        
+        expenseData.splitAmong = [];
         await addGroupExpense(groupId as string, expenseData);
-        Alert.alert('Success', 'Group expense added successfully!');
       } else {
-        // Save to PERSONAL expenses in Firebase
         await addUserExpense(user.uid, expenseData);
-        Alert.alert('Success', 'Expense added successfully!');
       }
       
       Alert.alert(
@@ -142,7 +135,6 @@ export default function AddExpenseScreen() {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Header */}
           <LinearGradient
             colors={['#1D9E75', '#16825E', '#0F6648']}
             start={{ x: 0, y: 0 }}
@@ -297,7 +289,6 @@ export default function AddExpenseScreen() {
             </View>
           </View>
 
-          {/* Save Button */}
           <TouchableOpacity
             style={[styles.saveButton, isLoading && styles.saveButtonDisabled]}
             onPress={handleSave}

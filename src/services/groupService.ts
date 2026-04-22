@@ -14,7 +14,15 @@ import {
   updateDoc,
   where
 } from 'firebase/firestore';
-import { v4 as uuidv4 } from 'uuid';
+
+// Custom UUID generator for React Native (no external dependencies)
+const generateUUID = (): string => {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+};
 
 export interface GroupMember {
   uid: string;
@@ -67,7 +75,7 @@ export const createGroup = async (
   userName: string,
   userEmail: string
 ): Promise<Group> => {
-  const groupId = uuidv4();
+  const groupId = generateUUID();
   const inviteCode = generateInviteCode();
   const now = new Date().toISOString();
 
@@ -110,6 +118,7 @@ export const joinGroup = async (
   const groupDoc = querySnapshot.docs[0];
   const group = groupDoc.data() as Group;
 
+  // Check if user already in group
   if (group.members.some(m => m.uid === userUid)) {
     throw new Error('You are already a member of this group');
   }
@@ -135,12 +144,14 @@ export const subscribeToUserGroups = (
   callback: (groups: Group[]) => void
 ) => {
   const groupsRef = collection(db, 'groups');
+  // Query using memberUids array for server-side filtering
   const q = query(groupsRef, where('memberUids', 'array-contains', userUid));
   
   return onSnapshot(q, (snapshot: QuerySnapshot<DocumentData>) => {
     const groups: Group[] = [];
     snapshot.forEach(doc => {
       const group = { id: doc.id, ...doc.data() } as Group;
+      // Only show active groups
       if (group.active !== false) {
         groups.push(group);
       }
@@ -164,7 +175,7 @@ export const subscribeToGroup = (
   });
 };
 
-// UPDATE GROUP - Add this function
+// Update group
 export const updateGroup = async (groupId: string, updates: Partial<Group>): Promise<void> => {
   const groupRef = doc(db, 'groups', groupId);
   await updateDoc(groupRef, updates);
@@ -174,18 +185,23 @@ export const updateGroup = async (groupId: string, updates: Partial<Group>): Pro
 export const deleteGroupCompletely = async (groupId: string): Promise<void> => {
   const groupRef = doc(db, 'groups', groupId);
   
+  // Get all expenses in the group
   const expensesRef = collection(db, 'groups', groupId, 'expenses');
   const expensesSnapshot = await getDocs(expensesRef);
   
+  // Delete each expense
   const deletePromises = expensesSnapshot.docs.map(expenseDoc => 
     deleteDoc(doc(db, 'groups', groupId, 'expenses', expenseDoc.id))
   );
   
+  // Wait for all expenses to be deleted
   await Promise.all(deletePromises);
+  
+  // Finally delete the group document
   await deleteDoc(groupRef);
 };
 
-// Soft delete
+// Soft delete (mark as inactive without removing data)
 export const softDeleteGroup = async (groupId: string): Promise<void> => {
   await updateDoc(doc(db, 'groups', groupId), {
     active: false,
@@ -193,7 +209,7 @@ export const softDeleteGroup = async (groupId: string): Promise<void> => {
   });
 };
 
-// Main delete function
+// Main delete function - use this for complete deletion
 export const deleteGroup = async (groupId: string): Promise<void> => {
   await deleteGroupCompletely(groupId);
 };
@@ -203,7 +219,7 @@ export const addGroupExpense = async (
   groupId: string,
   expense: Omit<GroupExpense, 'id' | 'createdAt'>
 ): Promise<void> => {
-  const expenseId = uuidv4();
+  const expenseId = generateUUID();
   const newExpense: GroupExpense = {
     ...expense,
     id: expenseId,

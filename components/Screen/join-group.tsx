@@ -1,21 +1,21 @@
 // app/join-group.tsx
 import { joinGroup } from '@/src/services/groupService';
-import { useAuthStore } from '@/src/store/authStore';
+import { useAppSelector } from '@/src/store/hooks';
 import { router } from 'expo-router';
 import React, { useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    SafeAreaView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  SafeAreaView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 
 export default function JoinGroupScreen() {
-  const { user } = useAuthStore();
+  const { user } = useAppSelector(state => state.auth);
   const [inviteCode, setInviteCode] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 

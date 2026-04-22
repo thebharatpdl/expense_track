@@ -2,11 +2,11 @@
 import { auth } from '@/src/config/firebase';
 import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit';
 import {
-    createUserWithEmailAndPassword,
-    signInWithEmailAndPassword,
-    signOut,
-    updateProfile,
-    User
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  signOut,
+  updateProfile,
+  User
 } from 'firebase/auth';
 
 interface AuthState {
@@ -18,7 +18,7 @@ interface AuthState {
 
 const initialState: AuthState = {
   user: null,
-  loading: false,
+  loading: true, // Start as true to show loading screen
   error: null,
   isAuthenticated: false,
 };
@@ -45,17 +45,6 @@ export const logout = createAsyncThunk('auth/logout', async () => {
   return null;
 });
 
-// Listen to auth state changes from Firebase
-export const setAuthListener = () => (dispatch: any) => {
-  auth.onAuthStateChanged((user: User | null) => {
-    if (user) {
-      dispatch(setUser(user));
-    } else {
-      dispatch(clearUser());
-    }
-  });
-};
-
 const authSlice = createSlice({
   name: 'auth',
   initialState,
@@ -79,7 +68,6 @@ const authSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
-      // Register
       .addCase(register.pending, (state) => {
         state.loading = true;
         state.error = null;
@@ -94,7 +82,6 @@ const authSlice = createSlice({
         state.error = action.error.message || 'Registration failed';
         state.isAuthenticated = false;
       })
-      // Login
       .addCase(login.pending, (state) => {
         state.loading = true;
         state.error = null;
@@ -109,7 +96,6 @@ const authSlice = createSlice({
         state.error = action.error.message || 'Login failed';
         state.isAuthenticated = false;
       })
-      // Logout
       .addCase(logout.pending, (state) => {
         state.loading = true;
       })

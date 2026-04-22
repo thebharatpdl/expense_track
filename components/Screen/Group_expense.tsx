@@ -3,6 +3,8 @@ import { Group, GroupExpense, deleteGroupExpense, subscribeToGroup, subscribeToG
 import { useAppSelector } from '@/src/store/hooks';
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useState } from 'react';
+import 'react-native-get-random-values'; // Add this at the very top
+
 import {
   ActivityIndicator,
   Alert,

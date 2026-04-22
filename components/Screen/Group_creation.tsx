@@ -1,6 +1,6 @@
 // app/Group_creation.tsx
 import { createGroup } from '@/src/services/groupService';
-import { useAuthStore } from '@/src/store/authStore';
+import { useAppSelector } from '@/src/store/hooks'; // Change this
 import { router } from 'expo-router';
 import React, { useState } from 'react';
 import {
@@ -14,12 +14,13 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import 'react-native-get-random-values';
 
 export default function GroupCreationScreen() {
-  const { user } = useAuthStore();
+  const { user } = useAppSelector(state => state.auth);
   const [groupName, setGroupName] = useState('');
   const [memberName, setMemberName] = useState('');
-  const [members, setMembers] = useState<string[]>([]); // Store emails or names for now
+  const [members, setMembers] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
   const addMember = () => {
@@ -56,7 +57,6 @@ export default function GroupCreationScreen() {
         user.email || ''
       );
       
-      // Show invite code to share
       Alert.alert(
         'Success',
         `Group "${groupName}" created successfully!\n\nInvite Code: ${newGroup.inviteCode}\n\nShare this code with friends to join.`,
@@ -81,7 +81,6 @@ export default function GroupCreationScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView style={styles.scrollView}>
-        {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()}>
             <Text style={styles.backButton}>← Back</Text>
@@ -90,7 +89,6 @@ export default function GroupCreationScreen() {
           <View style={{ width: 50 }} />
         </View>
 
-        {/* Group Name */}
         <View style={styles.section}>
           <Text style={styles.label}>Group Name</Text>
           <TextInput
@@ -105,7 +103,6 @@ export default function GroupCreationScreen() {
           </Text>
         </View>
 
-        {/* Members (Optional - for invite list) */}
         <View style={styles.section}>
           <Text style={styles.label}>Invite Members (Optional)</Text>
           <Text style={styles.sectionSubLabel}>
@@ -136,7 +133,6 @@ export default function GroupCreationScreen() {
           </View>
         </View>
 
-        {/* Create Button */}
         <TouchableOpacity
           style={[styles.createButton, !groupName.trim() && styles.disabledButton]}
           onPress={handleCreateGroup}

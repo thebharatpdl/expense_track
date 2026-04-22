@@ -14,7 +14,15 @@ import {
   setDoc,
   updateDoc
 } from 'firebase/firestore';
-import { v4 as uuidv4 } from 'uuid';
+
+// Custom UUID generator for React Native (no external dependencies)
+const generateUUID = (): string => {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+};
 
 export interface UserExpense {
   id: string;
@@ -45,7 +53,7 @@ export const addUserExpense = async (
   userId: string,
   expense: Omit<UserExpense, 'id' | 'userId' | 'createdAt'>
 ): Promise<void> => {
-  const expenseId = uuidv4();
+  const expenseId = generateUUID(); // Use custom function instead of uuidv4()
   const newExpense: UserExpense = {
     ...expense,
     id: expenseId,
