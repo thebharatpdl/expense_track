@@ -1,8 +1,10 @@
 // app/Group_creation.tsx
-import { useGroupStore } from '@/src/store/groupStore';
+import { createGroup } from '@/src/services/groupService';
+import { useAuthStore } from '@/src/store/authStore';
 import { router } from 'expo-router';
 import React, { useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   SafeAreaView,
   ScrollView,
@@ -12,18 +14,17 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { v4 as uuidv4 } from 'uuid';
 
 export default function GroupCreationScreen() {
-  const { addGroup } = useGroupStore();
+  const { user } = useAuthStore();
   const [groupName, setGroupName] = useState('');
   const [memberName, setMemberName] = useState('');
-  const [members, setMembers] = useState<string[]>(['You']);
+  const [members, setMembers] = useState<string[]>([]); // Store emails or names for now
   const [isLoading, setIsLoading] = useState(false);
 
   const addMember = () => {
     if (!memberName.trim()) {
-      Alert.alert('Error', 'Please enter member name');
+      Alert.alert('Error', 'Please enter member name or email');
       return;
     }
     setMembers([...members, memberName.trim()]);
@@ -31,16 +32,7 @@ export default function GroupCreationScreen() {
   };
 
   const removeMember = (index: number) => {
-    if (index === 0) {
-      Alert.alert('Cannot Remove', 'You cannot remove yourself');
-      return;
-    }
     setMembers(members.filter((_, i) => i !== index));
-  };
-
-  const formatMembersString = () => {
-    if (members.length <= 3) return members.join(', ');
-    return `${members.slice(0, 3).join(', ')} +${members.length - 3}`;
   };
 
   const handleCreateGroup = async () => {
@@ -49,34 +41,38 @@ export default function GroupCreationScreen() {
       return;
     }
 
-    if (members.length < 2) {
-      Alert.alert('Error', 'Please add at least one more member');
+    if (!user) {
+      Alert.alert('Error', 'You must be logged in');
       return;
     }
 
     setIsLoading(true);
     
     try {
-      await new Promise(resolve => setTimeout(resolve, 500));
+      const newGroup = await createGroup(
+        groupName.trim(),
+        user.uid,
+        user.displayName || 'User',
+        user.email || ''
+      );
       
-      const newGroup = {
-        id: uuidv4(),
-        name: groupName.trim(),
-        members: formatMembersString(),
-        balance: 0,
-        settled: false,
-        progress: 0,
-      };
-      
-      addGroup(newGroup);
-      
+      // Show invite code to share
       Alert.alert(
         'Success',
-        `Group "${groupName}" created successfully!`,
-        [{ text: 'OK', onPress: () => router.back() }]
+        `Group "${groupName}" created successfully!\n\nInvite Code: ${newGroup.inviteCode}\n\nShare this code with friends to join.`,
+        [
+          { 
+            text: 'View Group', 
+            onPress: () => router.push({
+              pathname: '/Group_expense',
+              params: { groupId: newGroup.id }
+            } as any)
+          },
+          { text: 'OK', onPress: () => router.back() }
+        ]
       );
-    } catch (error) {
-      Alert.alert('Error', 'Failed to create group');
+    } catch (error: any) {
+      Alert.alert('Error', error.message);
     } finally {
       setIsLoading(false);
     }
@@ -99,32 +95,40 @@ export default function GroupCreationScreen() {
           <Text style={styles.label}>Group Name</Text>
           <TextInput
             style={styles.input}
-            placeholder="e.g., Pokhara Trip"
+            placeholder="e.g., Pokhara Trip, Flatmates"
+            placeholderTextColor="#999"
             value={groupName}
             onChangeText={setGroupName}
           />
+          <Text style={styles.hint}>
+            You'll get an invite code to share with friends
+          </Text>
         </View>
 
-        {/* Members */}
+        {/* Members (Optional - for invite list) */}
         <View style={styles.section}>
-          <Text style={styles.label}>Members</Text>
+          <Text style={styles.label}>Invite Members (Optional)</Text>
+          <Text style={styles.sectionSubLabel}>
+            Add emails or names - they'll need the invite code to join
+          </Text>
+          
           {members.map((member, index) => (
             <View key={index} style={styles.memberRow}>
               <Text style={styles.memberName}>{member}</Text>
-              {index !== 0 && (
-                <TouchableOpacity onPress={() => removeMember(index)}>
-                  <Text style={styles.removeButton}>Remove</Text>
-                </TouchableOpacity>
-              )}
+              <TouchableOpacity onPress={() => removeMember(index)}>
+                <Text style={styles.removeButton}>Remove</Text>
+              </TouchableOpacity>
             </View>
           ))}
           
           <View style={styles.addMemberRow}>
             <TextInput
               style={[styles.input, styles.memberInput]}
-              placeholder="Add member name"
+              placeholder="Enter name or email"
+              placeholderTextColor="#999"
               value={memberName}
               onChangeText={setMemberName}
+              onSubmitEditing={addMember}
             />
             <TouchableOpacity style={styles.addButton} onPress={addMember}>
               <Text style={styles.addButtonText}>Add</Text>
@@ -134,13 +138,15 @@ export default function GroupCreationScreen() {
 
         {/* Create Button */}
         <TouchableOpacity
-          style={[styles.createButton, (!groupName.trim() || members.length < 2) && styles.disabledButton]}
+          style={[styles.createButton, !groupName.trim() && styles.disabledButton]}
           onPress={handleCreateGroup}
-          disabled={!groupName.trim() || members.length < 2 || isLoading}
+          disabled={!groupName.trim() || isLoading}
         >
-          <Text style={styles.createButtonText}>
-            {isLoading ? 'Creating...' : 'Create Group'}
-          </Text>
+          {isLoading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.createButtonText}>Create Group</Text>
+          )}
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
@@ -167,7 +173,7 @@ const styles = StyleSheet.create({
   },
   backButton: {
     fontSize: 16,
-    color: '#7C6FFF',
+    color: '#1D9E75',
   },
   headerTitle: {
     fontSize: 18,
@@ -183,14 +189,24 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#1C1C1E',
-    marginBottom: 12,
+    marginBottom: 8,
+  },
+  sectionSubLabel: {
+    fontSize: 12,
+    color: '#8E8E93',
+    marginBottom: 16,
+  },
+  hint: {
+    fontSize: 12,
+    color: '#8E8E93',
+    marginTop: 8,
   },
   input: {
     backgroundColor: '#F8FAFC',
     borderRadius: 10,
     paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 14,
+    paddingVertical: 12,
+    fontSize: 16,
     borderWidth: 1,
     borderColor: '#E5E5EA',
   },
@@ -219,7 +235,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   addButton: {
-    backgroundColor: '#7C6FFF',
+    backgroundColor: '#1D9E75',
     paddingHorizontal: 20,
     borderRadius: 10,
     justifyContent: 'center',
@@ -230,7 +246,7 @@ const styles = StyleSheet.create({
   },
   createButton: {
     margin: 16,
-    backgroundColor: '#7C6FFF',
+    backgroundColor: '#1D9E75',
     paddingVertical: 16,
     borderRadius: 14,
     alignItems: 'center',

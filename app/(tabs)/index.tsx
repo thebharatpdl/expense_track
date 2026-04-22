@@ -1,13 +1,15 @@
-import { EmptyState } from '@/components/EmptyState'
-import { ExpenseCard } from '@/components/ExpenseCard'
-import { useBudgetStore } from '@/src/store/budgetStore'
-import { useExpenseStore } from '@/src/store/expenseStore'
-import { useGroupStore } from '@/src/store/groupStore'
+// app/(tabs)/index.tsx
+import { deleteGroup, Group, GroupExpense, subscribeToGroupExpenses, subscribeToUserGroups } from '@/src/services/groupService'
+import { subscribeToUserExpenses } from '@/src/services/userExpenseService'
+import { useAppDispatch, useAppSelector } from '@/src/store/hooks'
+import { logout } from '@/src/store/slice/authSlice'
+import { clearExpenses, setExpenses } from '@/src/store/slice/expenseSlice'
+import { deleteGroup as deleteGroupAction, setGroups } from '@/src/store/slice/groupSlice'
 import { colors } from '@/src/theme/colors'
+import BottomSheet, { BottomSheetView } from '@gorhom/bottom-sheet'
 import { LinearGradient } from 'expo-linear-gradient'
 import { router } from 'expo-router'
-import React, { useState } from 'react'
-
+import React, { useEffect, useRef, useState } from 'react'
 import {
   Alert,
   FlatList,
@@ -21,41 +23,128 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 
 const CATEGORY_TABS = ['All', 'Food', 'Transport', 'Utilities', 'Shopping']
 
+// Combined expense type for display
+type CombinedExpense = {
+  id: string;
+  title: string;
+  amount: number;
+  category: string;
+  date: string;
+  description?: string;
+  type: 'personal' | 'group';
+  groupName?: string;
+  paidBy?: string;
+}
+
 export default function HomeScreen() {
-  const { expenses, deleteExpense, deleteExpensesByGroup } = useExpenseStore() // Add deleteExpensesByGroup
-  const { monthlyLimit } = useBudgetStore()
-  const { groups, deleteGroup } = useGroupStore() // Add deleteGroup
-  const [searchQuery, setSearchQuery] = useState('')
+  const dispatch = useAppDispatch();
+  const { user } = useAppSelector(state => state.auth);
+  const { monthlyLimit } = useAppSelector(state => state.budget);
+  const { expenses: personalExpenses } = useAppSelector(state => state.expenses);
+  const { groups } = useAppSelector(state => state.groups);
+  
+  const [groupExpenses, setGroupExpenses] = useState<GroupExpense[]>([])
+  const [allExpenses, setAllExpenses] = useState<CombinedExpense[]>([])
   const [activeTab, setActiveTab] = useState('All')
+  
+  // Bottom sheet ref
+  const bottomSheetRef = useRef<BottomSheet>(null)
+  const [isOpen, setIsOpen] = useState(false)
+
+  // Load personal expenses from Firebase
+  useEffect(() => {
+    if (!user) return;
+
+    const unsubscribe = subscribeToUserExpenses(user.uid, (fetchedExpenses) => {
+      dispatch(setExpenses(fetchedExpenses));
+    });
+
+    return () => unsubscribe();
+  }, [user, dispatch]);
+
+  // Load groups from Firebase
+  useEffect(() => {
+    if (!user) return;
+
+    const unsubscribe = subscribeToUserGroups(user.uid, (fetchedGroups) => {
+      dispatch(setGroups(fetchedGroups));
+      
+      // Subscribe to expenses for each group
+      const unsubscribes: (() => void)[] = [];
+      
+      fetchedGroups.forEach(group => {
+        const unsubscribeExpenses = subscribeToGroupExpenses(group.id, (expenses) => {
+          setGroupExpenses(prev => {
+            const otherGroups = prev.filter(e => e.groupId !== group.id);
+            return [...otherGroups, ...expenses];
+          });
+        });
+        unsubscribes.push(unsubscribeExpenses);
+      });
+      
+      return () => {
+        unsubscribes.forEach(unsub => unsub());
+      };
+    });
+
+    return () => unsubscribe();
+  }, [user, dispatch]);
+
+  // Combine personal and group expenses
+  useEffect(() => {
+    const combined: CombinedExpense[] = [
+      // Personal expenses
+      ...personalExpenses.map(exp => ({
+        id: exp.id,
+        title: exp.title,
+        amount: exp.amount,
+        category: exp.category,
+        date: exp.date,
+        description: exp.description,
+        type: 'personal' as const,
+      })),
+      // Group expenses where user paid
+      ...groupExpenses
+        .filter(exp => exp.paidBy === user?.uid)
+        .map(exp => ({
+          id: exp.id,
+          title: exp.title,
+          amount: exp.amount,
+          category: exp.category,
+          date: exp.date,
+          description: exp.description,
+          type: 'group' as const,
+          groupName: groups.find(g => g.id === exp.groupId)?.name,
+          paidBy: exp.paidByName,
+        })),
+    ];
+    
+    // Sort by date (newest first)
+    combined.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    setAllExpenses(combined);
+  }, [personalExpenses, groupExpenses, groups, user]);
 
   const now = new Date()
-  const monthly = expenses.filter(e => {
+  
+  // Filter monthly expenses (only user's paid expenses)
+  const monthly = allExpenses.filter(e => {
     const d = new Date(e.date)
     return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
   })
 
+  // Total spent this month = user's personal + user's group expenses
   const total = monthly.reduce((sum, e) => sum + e.amount, 0)
   const remaining = monthlyLimit - total
   const percentage = monthlyLimit > 0 ? Math.min((total / monthlyLimit) * 100, 100) : 0
 
-  // Group balance totals
-  const totalOwed = groups.filter(g => g.balance > 0).reduce((s, g) => s + g.balance, 0)
-  const totalOwe = groups.filter(g => g.balance < 0).reduce((s, g) => s + Math.abs(g.balance), 0)
+  // Get last 4 expenses for display
+  const last4Expenses = allExpenses.slice(0, 4)
 
-  const displayedExpenses = (() => {
-    let list = searchQuery.trim()
-      ? expenses.filter(e =>
-          e.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          e.category.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          (e.description?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false)
-        )
-      : expenses
-
-    if (activeTab !== 'All') {
-      list = list.filter(e => e.category.toLowerCase() === activeTab.toLowerCase())
-    }
-    return list
-  })()
+  // Filter expenses by category for display
+  const filteredExpenses = last4Expenses.filter(e => {
+    if (activeTab === 'All') return true
+    return e.category.toLowerCase() === activeTab.toLowerCase()
+  })
 
   const getGreeting = () => {
     const h = new Date().getHours()
@@ -70,36 +159,30 @@ export default function HomeScreen() {
     return '#10B981'
   }
 
-  const confirmDelete = (id: string) => {
-    Alert.alert(
-      'Delete Expense',
-      'Are you sure you want to remove this expense?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Delete', style: 'destructive', onPress: () => deleteExpense(id) },
-      ]
-    )
+  // Group helper functions
+  const getGroupBadgeStyle = (group: Group) => {
+    if (group.totalExpenses === 0) return { bg: '#F1F5F9', text: '#64748B' }
+    return { bg: '#DCFCE7', text: '#15803D' }
   }
 
-  const getGroupBadgeStyle = (group: (typeof groups)[0]) => {
-    if (group.settled) return { bg: '#F1F5F9', text: '#64748B' }
-    if (group.balance > 0) return { bg: '#DCFCE7', text: '#15803D' }
-    return { bg: '#FEE2E2', text: '#B91C1C' }
+  const getGroupBadgeLabel = (group: Group) => {
+    if (group.totalExpenses === 0) return 'No expenses'
+    return `₹${group.totalExpenses.toLocaleString()}`
   }
 
-  const getGroupBadgeLabel = (group: (typeof groups)[0]) => {
-    if (group.settled) return 'Settled'
-    if (group.balance > 0) return `Owed ₹${group.balance.toLocaleString()}`
-    return `Owe ₹${Math.abs(group.balance).toLocaleString()}`
+  const getGroupBarColor = (group: Group) => {
+    if (group.totalExpenses === 0) return '#94A3B8'
+    return '#10B981'
   }
 
-  const getGroupBarColor = (group: (typeof groups)[0]) => {
-    if (group.settled) return '#94A3B8'
-    if (group.balance > 0) return '#10B981'
-    return '#EF4444'
+  // Format members string for display
+  const getMembersString = (group: Group) => {
+    const names = group.members.map(m => m.name);
+    if (names.length <= 3) return names.join(', ');
+    return `${names.slice(0, 3).join(', ')} +${names.length - 3}`;
   }
 
-  // Function to delete group and all its expenses
+  // Function to delete group
   const deleteGroupCompletely = (groupId: string, groupName: string) => {
     Alert.alert(
       'Delete Group',
@@ -109,59 +192,190 @@ export default function HomeScreen() {
         { 
           text: 'Delete', 
           style: 'destructive',
-          onPress: () => {
-            // First delete all expenses in the group
-            deleteExpensesByGroup(groupId)
-            // Then delete the group itself
-            deleteGroup(groupId)
-            
-            Alert.alert('Success', `"${groupName}" and all its expenses have been deleted`)
+          onPress: async () => {
+            try {
+              await deleteGroup(groupId);
+              dispatch(deleteGroupAction(groupId));
+              Alert.alert('Success', `"${groupName}" and all its expenses have been deleted`);
+            } catch (error) {
+              Alert.alert('Error', 'Failed to delete group');
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  // Bottom sheet methods
+  const handleOpenPress = () => {
+    bottomSheetRef.current?.expand()
+    setIsOpen(true)
+  }
+
+  const handleClosePress = () => {
+    bottomSheetRef.current?.close()
+    setIsOpen(false)
+  }
+
+  const handleLogout = async () => {
+    Alert.alert(
+      'Logout',
+      'Are you sure you want to logout?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Logout', 
+          style: 'destructive',
+          onPress: async () => {
+            handleClosePress();
+            dispatch(clearExpenses());
+            await dispatch(logout());
+            router.replace('/login');
           }
         }
       ]
     )
   }
 
+  // Navigate to full expenses screen
+  const goToFullExpenses = () => {
+    router.push('/all-expenses' as any)
+  }
+
+  // Render expense item
+  const renderExpenseItem = ({ item }: { item: CombinedExpense }) => (
+    <View style={styles.expenseItem}>
+      <View style={[styles.expIcon, { backgroundColor: getCategoryBgColor(item.category) }]}>
+        <Text style={styles.expIconText}>{getCategoryIcon(item.category)}</Text>
+      </View>
+      <View style={styles.expInfo}>
+        <Text style={styles.expName}>{item.title}</Text>
+        <Text style={styles.expSub}>
+          {getRelativeDate(item.date)} · {item.category}
+          {item.type === 'group' && item.groupName && (
+            <Text style={styles.groupTag}> · {item.groupName}</Text>
+          )}
+        </Text>
+      </View>
+      <Text style={[styles.expAmount, styles.amountRed]}>- ₹{item.amount.toLocaleString()}</Text>
+    </View>
+  );
+
+  const getRelativeDate = (dateStr: string) => {
+    const date = new Date(dateStr);
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    if (date.toDateString() === today.toDateString()) return 'Today';
+    if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  };
+
+  const getCategoryIcon = (category: string): string => {
+    const icons: Record<string, string> = {
+      Food: '🍔',
+      Transport: '🚗',
+      Shopping: '🛒',
+      Bills: '💡',
+      Health: '💊',
+      Other: '📦',
+    };
+    return icons[category] || '📝';
+  };
+
+  const getCategoryBgColor = (category: string): string => {
+    const colorMap: Record<string, string> = {
+      Food: '#FAEEDA',
+      Transport: '#E6F1FB',
+      Shopping: '#FFE4E1',
+      Bills: '#E0F7FA',
+      Health: '#FCEBEB',
+      Other: '#F2F2F7',
+    };
+    return colorMap[category] || '#F2F2F7';
+  };
+
+  // If not logged in, show full screen login prompt
+  if (!user) {
+    return (
+      <SafeAreaView style={styles.safe}>
+        <LinearGradient
+          colors={['#1D9E75', '#16825E', '#0F6648']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.loginPromptContainer}
+        >
+          <View style={styles.loginPromptContent}>
+            <Text style={styles.loginPromptEmoji}>👤</Text>
+            <Text style={styles.loginPromptTitle}>Login to Continue</Text>
+            <Text style={styles.loginPromptSubtitle}>
+              Sign in to view your expenses and manage groups
+            </Text>
+            <TouchableOpacity 
+              style={styles.loginPromptButton}
+              onPress={() => router.push('/login')}
+            >
+              <Text style={styles.loginPromptButtonText}>Login / Sign Up</Text>
+            </TouchableOpacity>
+          </View>
+        </LinearGradient>
+      </SafeAreaView>
+    )
+  }
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <FlatList
-        data={displayedExpenses}
-        keyExtractor={(e) => e.id}
+        data={filteredExpenses}
+        keyExtractor={(item) => item.id}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
         ListHeaderComponent={
           <>
             {/* ── Header ── */}
             <LinearGradient
-              colors={['#7C6FFF', '#4A44B5']}
+              colors={['#1D9E75', '#16825E', '#0F6648']}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={styles.header}
             >
-              {/* Top row */}
               <View style={styles.greetingRow}>
                 <View>
                   <Text style={styles.greetingSmall}>
                     {now.toLocaleString('default', { month: 'long', year: 'numeric' })}
                   </Text>
-                  <Text style={styles.greeting}>👋 {getGreeting()}</Text>
+                  <Text style={styles.greeting}>
+                    👋 {getGreeting()}, {user?.displayName || 'User'}
+                  </Text>
                 </View>
+                
+                <TouchableOpacity onPress={handleOpenPress} style={styles.avatarButton}>
+                  <View style={styles.avatar}>
+                    <Text style={styles.avatarText}>
+                      {user?.displayName?.substring(0, 2).toUpperCase() || 'U'}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
               </View>
 
-              {/* Total amount */}
               <View style={styles.totalSection}>
                 <Text style={styles.totalLabel}>Total spent this month</Text>
                 <Text style={styles.totalAmount}>₹ {total.toLocaleString()}</Text>
               </View>
-
             </LinearGradient>
 
             {/* ── My Groups Section ── */}
             <View style={styles.sectionRow}>
               <Text style={styles.sectionLabel}>MY GROUPS</Text>
-              <TouchableOpacity onPress={() => router.push('/Group_creation')}>
-                <Text style={styles.sectionLink}>+ new group</Text>
-              </TouchableOpacity>
+              <View style={styles.headerButtons}>
+                <TouchableOpacity onPress={() => router.push('/join-group')} style={styles.joinButton}>
+                  <Text style={styles.joinButtonText}>Join</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => router.push('/Group_creation')}>
+                  <Text style={styles.sectionLink}>+ new</Text>
+                </TouchableOpacity>
+              </View>
             </View>
 
             <ScrollView
@@ -186,7 +400,7 @@ export default function HomeScreen() {
                     <View style={styles.groupCardTop}>
                       <View style={{ flex: 1 }}>
                         <Text style={styles.groupCardName} numberOfLines={1}>{group.name}</Text>
-                        <Text style={styles.groupCardMembers}>{group.members}</Text>
+                        <Text style={styles.groupCardMembers}>{getMembersString(group)}</Text>
                       </View>
                       <View style={[styles.groupBadge, { backgroundColor: badge.bg }]}>
                         <Text style={[styles.groupBadgeText, { color: badge.text }]}>
@@ -198,7 +412,7 @@ export default function HomeScreen() {
                       <View style={[
                         styles.groupProgressFill,
                         {
-                          width: `${Math.round(group.progress * 100)}%`,
+                          width: `${Math.min((group.totalExpenses / 10000) * 100, 100)}%`,
                           backgroundColor: getGroupBarColor(group),
                         },
                       ]} />
@@ -208,14 +422,12 @@ export default function HomeScreen() {
               })}
             </ScrollView>
 
-            {/* ── Section Header + Category Tabs ── */}
+            {/* ── Section Header with See All button ── */}
             <View style={styles.sectionRow}>
-              <Text style={styles.sectionLabel}>
-                {searchQuery ? 'SEARCH RESULTS' : 'MY EXPENSES'}
-              </Text>
-              <View style={styles.countBadge}>
-                <Text style={styles.countText}>{displayedExpenses.length} items</Text>
-              </View>
+              <Text style={styles.sectionLabel}>MY EXPENSES</Text>
+              <TouchableOpacity onPress={goToFullExpenses}>
+                <Text style={styles.seeAllLink}>see all</Text>
+              </TouchableOpacity>
             </View>
 
             {/* ── Category filter tabs ── */}
@@ -238,21 +450,75 @@ export default function HomeScreen() {
             </ScrollView>
           </>
         }
-        renderItem={({ item }) => (
-          <View style={styles.cardWrapper}>
-            <ExpenseCard
-              expense={item}
-              onPress={() => router.push({
-                pathname: '/editexpense' as any,
-                params: { expense: JSON.stringify(item) },
-              })}
-              onDelete={() => confirmDelete(item.id)}
-            />
+        renderItem={renderExpenseItem}
+        ListEmptyComponent={
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyEmoji}>📭</Text>
+            <Text style={styles.emptyTitle}>No expenses yet</Text>
+            <Text style={styles.emptySubtitle}>
+              Tap the "+ Add Expense" button to add your first expense
+            </Text>
           </View>
-        )}
-        ListEmptyComponent={<EmptyState />}
-        ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
+        }
+        ItemSeparatorComponent={() => <View style={styles.separator} />}
       />
+
+      {/* Add Expense Button */}
+      <TouchableOpacity 
+        style={styles.fab}
+        onPress={() => router.push('/add-expense' as any)}
+      >
+        <Text style={styles.fabText}>+</Text>
+      </TouchableOpacity>
+
+      {/* Bottom Sheet for Profile */}
+      <BottomSheet
+        ref={bottomSheetRef}
+        snapPoints={['50%']}
+        enablePanDownToClose={true}
+        onClose={() => setIsOpen(false)}
+        backgroundStyle={styles.bottomSheetBackground}
+        handleIndicatorStyle={styles.bottomSheetHandle}
+      >
+        <BottomSheetView style={styles.bottomSheetContent}>
+          <View style={styles.profileAvatarContainer}>
+            <View style={styles.profileAvatar}>
+              <Text style={styles.profileAvatarText}>
+                {user?.displayName?.substring(0, 2).toUpperCase() || 'U'}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.profileInfo}>
+            <Text style={styles.profileName}>{user?.displayName || 'User'}</Text>
+            <Text style={styles.profileEmail}>{user?.email || 'No email'}</Text>
+          </View>
+
+          <View style={styles.profileDivider} />
+
+          <TouchableOpacity style={styles.profileMenuItem}>
+            <Text style={styles.profileMenuIcon}>👤</Text>
+            <Text style={styles.profileMenuText}>Edit Profile</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.profileMenuItem}>
+            <Text style={styles.profileMenuIcon}>⚙️</Text>
+            <Text style={styles.profileMenuText}>Settings</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.profileMenuItem}>
+            <Text style={styles.profileMenuIcon}>❓</Text>
+            <Text style={styles.profileMenuText}>Help & Support</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.profileLogoutButton} onPress={handleLogout}>
+            <Text style={styles.profileLogoutIcon}>🚪</Text>
+            <Text style={styles.profileLogoutText}>Logout</Text>
+          </TouchableOpacity>
+
+          <Text style={styles.profileVersion}>Version 1.0.0</Text>
+        </BottomSheetView>
+      </BottomSheet>
     </SafeAreaView>
   )
 }
@@ -263,10 +529,78 @@ const styles = StyleSheet.create({
     backgroundColor: '#F1F5F9',
   },
   listContent: {
-    paddingBottom: 110,
+    paddingBottom: 100,
   },
-
-  // ── Header ──
+  fab: {
+    position: 'absolute',
+    bottom: 20,
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#1D9E75',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  fabText: {
+    fontSize: 28,
+    color: '#fff',
+    fontWeight: '600',
+  },
+  loginPromptContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loginPromptContent: {
+    alignItems: 'center',
+    paddingHorizontal: 32,
+  },
+  loginPromptEmoji: {
+    fontSize: 80,
+    marginBottom: 24,
+  },
+  headerButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  joinButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+  },
+  joinButtonText: {
+    fontSize: 12,
+    color: '#1D9E75',
+    fontWeight: '600',
+  },
+  loginPromptTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#fff',
+    marginBottom: 12,
+  },
+  loginPromptSubtitle: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.7)',
+    textAlign: 'center',
+    marginBottom: 32,
+  },
+  loginPromptButton: {
+    backgroundColor: '#fff',
+    paddingHorizontal: 32,
+    paddingVertical: 14,
+    borderRadius: 12,
+  },
+  loginPromptButtonText: {
+    color: '#1D9E75',
+    fontSize: 16,
+    fontWeight: '600',
+  },
   header: {
     paddingHorizontal: 20,
     paddingTop: 16,
@@ -294,25 +628,24 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.2,
   },
-  budgetBtn: {
-    flexDirection: 'row',
+  avatarButton: {
+    padding: 4,
+  },
+  avatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.2)',
     alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(255,255,255,0.18)',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.25)',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.5)',
   },
-  budgetBtnIcon: { fontSize: 14 },
-  budgetBtnText: {
+  avatarText: {
+    fontSize: 16,
+    fontWeight: '700',
     color: '#fff',
-    fontSize: 13,
-    fontWeight: '600',
   },
-
-  // ── Total ──
   totalSection: {
     marginBottom: 12,
   },
@@ -328,188 +661,6 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: -1,
   },
-
-  // ── Group balance pills ──
-  groupPillRow: {
-    flexDirection: 'row',
-    marginBottom: 16,
-  },
-  groupPill: {
-    flex: 1,
-    backgroundColor: 'rgba(255,255,255,0.13)',
-    borderRadius: 14,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.18)',
-  },
-  groupPillLabel: {
-    color: 'rgba(255,255,255,0.65)',
-    fontSize: 11,
-    fontWeight: '500',
-    marginBottom: 3,
-  },
-  groupPillValue: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-
-  // ── Stats ──
-  statsRow: {
-    flexDirection: 'row',
-    backgroundColor: 'rgba(255,255,255,0.13)',
-    borderRadius: 18,
-    padding: 16,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.15)',
-  },
-  statCard: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  statValue: {
-    color: '#fff',
-    fontSize: 17,
-    fontWeight: '800',
-    marginBottom: 3,
-  },
-  statLabel: {
-    color: 'rgba(255,255,255,0.65)',
-    fontSize: 10,
-    textAlign: 'center',
-    fontWeight: '500',
-    letterSpacing: 0.2,
-  },
-  statDivider: {
-    width: 1,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    marginHorizontal: 10,
-    borderRadius: 1,
-  },
-
-  // ── Progress ──
-  progressSection: {
-    backgroundColor: 'rgba(255,255,255,0.13)',
-    borderRadius: 18,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.15)',
-  },
-  progressHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  progressLabelRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  progressDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  progressLabel: {
-    color: 'rgba(255,255,255,0.9)',
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  progressPct: {
-    fontSize: 15,
-    fontWeight: '800',
-  },
-  progressTrack: {
-    height: 10,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    borderRadius: 99,
-    overflow: 'hidden',
-    marginBottom: 8,
-  },
-  progressFill: {
-    height: 10,
-    borderRadius: 99,
-  },
-  progressSub: {
-    color: 'rgba(255,255,255,0.65)',
-    fontSize: 12,
-    fontWeight: '500',
-  },
-
-  // ── No Budget ──
-  noBudgetBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    borderRadius: 18,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.3)',
-  },
-  noBudgetIcon: { fontSize: 22 },
-  noBudgetTitle: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  noBudgetSub: {
-    color: 'rgba(255,255,255,0.7)',
-    fontSize: 12,
-    marginTop: 1,
-  },
-  noBudgetArrow: {
-    color: '#fff',
-    fontSize: 22,
-    marginLeft: 'auto',
-    opacity: 0.7,
-  },
-
-  // ── Search ──
-  searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    marginHorizontal: 16,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: '#E8ECF0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  searchIcon: {
-    fontSize: 16,
-    marginRight: 10,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 14,
-    color: colors.text,
-    fontWeight: '500',
-  },
-  clearBtnWrap: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: '#F1F5F9',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  clearBtn: {
-    fontSize: 11,
-    color: colors.subtext,
-    fontWeight: '700',
-  },
-
-  // ── Section Header ──
   sectionRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -523,24 +674,16 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 1.2,
   },
+  seeAllLink: {
+    fontSize: 11,
+    color: '#1D9E75',
+    fontWeight: '600',
+  },
   sectionLink: {
     fontSize: 12,
     color: '#1D9E75',
     fontWeight: '600',
   },
-  countBadge: {
-    backgroundColor: colors.primary + '15',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 10,
-  },
-  countText: {
-    fontSize: 11,
-    color: colors.primary,
-    fontWeight: '600',
-  },
-
-  // ── Groups horizontal scroll ──
   groupsScroll: {
     paddingHorizontal: 16,
     paddingBottom: 4,
@@ -597,8 +740,6 @@ const styles = StyleSheet.create({
     height: 4,
     borderRadius: 99,
   },
-
-  // ── Category tabs ──
   tabsScroll: {
     paddingHorizontal: 16,
     gap: 8,
@@ -624,9 +765,170 @@ const styles = StyleSheet.create({
   tabTextActive: {
     color: '#fff',
   },
-
-  // ── Cards ──
-  cardWrapper: {
+  expenseItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: '#fff',
+  },
+  separator: {
+    height: 0.5,
+    backgroundColor: '#E5E5EA',
+  },
+  expIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  expIconText: {
+    fontSize: 18,
+  },
+  expInfo: {
+    flex: 1,
+  },
+  expName: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#1C1C1E',
+  },
+  expSub: {
+    fontSize: 11,
+    color: '#8E8E93',
+    marginTop: 2,
+  },
+  groupTag: {
+    color: '#1D9E75',
+    fontWeight: '500',
+  },
+  expAmount: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  amountRed: {
+    color: '#A32D2D',
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+    paddingHorizontal: 32,
+    backgroundColor: '#fff',
+    marginHorizontal: 16,
+    borderRadius: 16,
+    marginTop: 20,
+  },
+  emptyEmoji: {
+    fontSize: 48,
+    marginBottom: 16,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1C1C1E',
+    marginBottom: 8,
+  },
+  emptySubtitle: {
+    fontSize: 14,
+    color: '#8E8E93',
+    textAlign: 'center',
+  },
+  bottomSheetBackground: {
+    backgroundColor: '#fff',
+    borderRadius: 24,
+  },
+  bottomSheetHandle: {
+    backgroundColor: '#CBD5E1',
+    width: 40,
+  },
+  bottomSheetContent: {
+    flex: 1,
+    paddingHorizontal: 20,
+    paddingBottom: 30,
+  },
+  profileAvatarContainer: {
+    alignItems: 'center',
+    marginTop: 20,
+    marginBottom: 16,
+  },
+  profileAvatar: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#1D9E75',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#1D9E75',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  profileAvatarText: {
+    fontSize: 32,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  profileInfo: {
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  profileName: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1C1C1E',
+    marginBottom: 4,
+  },
+  profileEmail: {
+    fontSize: 14,
+    color: '#8E8E93',
+  },
+  profileDivider: {
+    height: 1,
+    backgroundColor: '#E8ECF0',
+    marginVertical: 16,
+  },
+  profileMenuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    gap: 12,
+  },
+  profileMenuIcon: {
+    fontSize: 22,
+    width: 32,
+  },
+  profileMenuText: {
+    fontSize: 16,
+    color: '#1C1C1E',
+    fontWeight: '500',
+  },
+  profileLogoutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 20,
+    paddingVertical: 14,
+    gap: 12,
+    backgroundColor: '#FEF2F2',
+    borderRadius: 12,
     paddingHorizontal: 16,
   },
-})
+  profileLogoutIcon: {
+    fontSize: 22,
+    width: 32,
+  },
+  profileLogoutText: {
+    fontSize: 16,
+    color: '#EF4444',
+    fontWeight: '600',
+  },
+  profileVersion: {
+    textAlign: 'center',
+    fontSize: 12,
+    color: '#8E8E93',
+    marginTop: 24,
+  },
+});

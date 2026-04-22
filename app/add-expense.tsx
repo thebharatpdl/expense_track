@@ -1,5 +1,7 @@
 // app/add-expense.tsx
-import { useExpenseStore } from '@/src/store/expenseStore';
+import { addGroupExpense } from '@/src/services/groupService'; // Add this import
+import { addUserExpense } from '@/src/services/userExpenseService';
+import { useAuthStore } from '@/src/store/authStore';
 import { colors } from '@/src/theme/colors';
 import { Category } from '@/src/types';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -7,19 +9,18 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    KeyboardAvoidingView,
-    Platform,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { v4 as uuidv4 } from 'uuid';
 
 const categories: Category[] = ['Food', 'Transport', 'Shopping', 'Bills', 'Health', 'Other'];
 
@@ -42,8 +43,8 @@ const categoryColors: Record<Category, string> = {
 };
 
 export default function AddExpenseScreen() {
-  const { addExpense } = useExpenseStore();
-  const { groupId, personName } = useLocalSearchParams(); // Get groupId and personName if coming from group
+  const { user } = useAuthStore();
+  const { groupId, personName } = useLocalSearchParams();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
@@ -68,25 +69,45 @@ export default function AddExpenseScreen() {
       return;
     }
 
+    if (!user) {
+      Alert.alert('Error', 'You must be logged in');
+      return;
+    }
+
     setIsLoading(true);
     try {
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      addExpense({
-        id: uuidv4(),
+      // Build expense object
+      const expenseData: any = {
         title: title.trim(),
         amount: amountValue,
         category,
         date: date.toISOString(),
-        createdAt: new Date().toISOString(),
-        description: description.trim() || undefined,
-        groupId: groupId as string || undefined,
-        paidBy: (personName as string) || 'You',
-      });
+        paidBy: user.uid,
+        paidByName: (personName as string) || user.displayName || 'You',
+      };
+      
+      // Only add description if it has value
+      if (description.trim()) {
+        expenseData.description = description.trim();
+      }
+      
+      // Check if this is a group expense
+      if (groupId) {
+        // Save to GROUP expenses in Firebase
+        expenseData.groupId = groupId as string;
+        expenseData.splitAmong = []; // Add member UIDs here if needed
+        
+        await addGroupExpense(groupId as string, expenseData);
+        Alert.alert('Success', 'Group expense added successfully!');
+      } else {
+        // Save to PERSONAL expenses in Firebase
+        await addUserExpense(user.uid, expenseData);
+        Alert.alert('Success', 'Expense added successfully!');
+      }
       
       Alert.alert(
         'Success',
-        'Expense added successfully!',
+        groupId ? 'Group expense added successfully!' : 'Expense added successfully!',
         [
           {
             text: 'Add Another',
@@ -101,8 +122,9 @@ export default function AddExpenseScreen() {
           { text: 'Go Home', onPress: () => router.back() }
         ]
       );
-    } catch (error) {
-      Alert.alert('Error', 'Failed to save expense. Please try again.');
+    } catch (error: any) {
+      console.error('Error adding expense:', error);
+      Alert.alert('Error', error.message || 'Failed to save expense. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -122,7 +144,7 @@ export default function AddExpenseScreen() {
         >
           {/* Header */}
           <LinearGradient
-            colors={['#7C6FFF', '#4A44B5']}
+            colors={['#1D9E75', '#16825E', '#0F6648']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={styles.header}
@@ -283,7 +305,7 @@ export default function AddExpenseScreen() {
             activeOpacity={0.85}
           >
             <LinearGradient
-              colors={['#7C6FFF', '#4A44B5']}
+              colors={['#1D9E75', '#16825E', '#0F6648']}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
               style={styles.saveGradient}
@@ -360,13 +382,13 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     padding: 20,
     marginBottom: 16,
-    shadowColor: '#6C63FF',
+    shadowColor: '#1D9E75',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.08,
     shadowRadius: 16,
     elevation: 4,
     borderWidth: 1,
-    borderColor: '#F0EEFF',
+    borderColor: '#E8ECF0',
   },
   inputGroup: {
     marginBottom: 22,
@@ -420,7 +442,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     overflow: 'hidden',
     borderWidth: 2,
-    borderColor: colors.primary + '30',
+    borderColor: '#1D9E75' + '30',
   },
   amountGradient: {
     flexDirection: 'row',
@@ -431,7 +453,7 @@ const styles = StyleSheet.create({
   currencySymbol: {
     fontSize: 28,
     fontWeight: '800',
-    color: colors.primary,
+    color: '#1D9E75',
     marginRight: 8,
   },
   amountInput: {
@@ -493,7 +515,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 12,
-    backgroundColor: colors.primary + '15',
+    backgroundColor: '#1D9E75' + '15',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -523,7 +545,7 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     overflow: 'hidden',
     marginBottom: 16,
-    shadowColor: colors.primary,
+    shadowColor: '#1D9E75',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.35,
     shadowRadius: 12,

@@ -1,11 +1,14 @@
-import { useExpenseStore } from '@/src/store/expenseStore';
-import { useGroupStore } from '@/src/store/groupStore';
+// app/Group_expense.tsx
+import { Group, GroupExpense, deleteGroupExpense, subscribeToGroup, subscribeToGroupExpenses, updateGroup } from '@/src/services/groupService';
+import { useAppSelector } from '@/src/store/hooks';
 import { router, useLocalSearchParams } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   FlatList,
   SafeAreaView,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -13,20 +16,12 @@ import {
   View,
 } from 'react-native';
 
-// Helper to format currency in Nepalese Rupees
 const formatRs = (amount: number) => {
   const absAmount = Math.abs(amount);
   const formatted = absAmount.toLocaleString('en-IN');
-  return amount < 0 ? `- Rs ${formatted}` : `Rs ${formatted}`;
+  return amount < 0 ? `- ₹${formatted}` : `₹${formatted}`;
 };
 
-// Helper to get member count from members string
-const getMemberCount = (membersString: string): number => {
-  const members = membersString.split(/[,+]/).map(m => m.trim());
-  return members.length;
-};
-
-// Category icons and background colors
 const getCategoryIcon = (category: string): string => {
   const icons: Record<string, string> = {
     Food: '🍔',
@@ -34,8 +29,6 @@ const getCategoryIcon = (category: string): string => {
     Shopping: '🛒',
     Bills: '💡',
     Health: '💊',
-    Entertainment: '🎬',
-    Utilities: '⚡',
     Other: '📦',
   };
   return icons[category] || '📝';
@@ -48,102 +41,160 @@ const getCategoryBgColor = (category: string): string => {
     Shopping: '#FFE4E1',
     Bills: '#E0F7FA',
     Health: '#FCEBEB',
-    Entertainment: '#F3E8FF',
-    Utilities: '#EAF3DE',
     Other: '#F2F2F7',
   };
   return colors[category] || '#F2F2F7';
 };
 
-export default function HomeScreen() {
-  const { expenses, deleteExpense } = useExpenseStore();
-  const { groups } = useGroupStore();
-  const { groupId } = useLocalSearchParams();
-  const [activeTab, setActiveTab] = useState('All');
-  const [personName, setPersonName] = useState('Ram');
-  const [isEditingPerson, setIsEditingPerson] = useState(false);
+interface BalanceResult {
+  youOwe: number;
+  youAreOwed: number;
+  netBalance: number;
+  balances: { memberName: string; amount: number; type: 'owe' | 'owed' }[];
+}
 
-  // Get current group
-  const currentGroup = groups.find(g => g.id === groupId);
-  const memberCount = currentGroup ? getMemberCount(currentGroup.members) : 2;
-
-  const now = new Date();
-  const currentMonth = now.getMonth();
-  const currentYear = now.getFullYear();
-
-  // Filter expenses by groupId first
-  const groupExpenses = groupId 
-    ? expenses.filter(exp => exp.groupId === groupId)
-    : expenses;
-
-  // Filter monthly expenses
-  const monthlyExpenses = groupExpenses.filter(exp => {
-    const expDate = new Date(exp.date);
-    return expDate.getMonth() === currentMonth && expDate.getFullYear() === currentYear;
+export default function GroupExpenseScreen() {
+  const { user } = useAppSelector(state => state.auth);
+  const { groupId } = useLocalSearchParams<{ groupId: string }>();
+  const [group, setGroup] = useState<Group | null>(null);
+  const [groupExpenses, setGroupExpenses] = useState<GroupExpense[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [groupName, setGroupName] = useState('');
+  const [selectedMember, setSelectedMember] = useState<string>('all');
+  const [balanceData, setBalanceData] = useState<BalanceResult>({
+    youOwe: 0,
+    youAreOwed: 0,
+    netBalance: 0,
+    balances: [],
   });
 
-  // Calculate totals
-  const totalSpent = monthlyExpenses.reduce((sum, exp) => sum + exp.amount, 0);
-  
-  // Calculate who owes whom based on member count
-  const expensesPaidByYou = monthlyExpenses
-    .filter(exp => !exp.paidBy || exp.paidBy === personName)
-    .reduce((sum, exp) => sum + exp.amount, 0);
-  
-  const expensesPaidByOthers = monthlyExpenses
-    .filter(exp => exp.paidBy && exp.paidBy !== personName)
-    .reduce((sum, exp) => sum + exp.amount, 0);
-  
-  // Calculate based on number of members
-  const youAreOwed = (expensesPaidByYou * (memberCount - 1)) / memberCount;
-  const youOwe = expensesPaidByOthers / memberCount;
-  const netBalance = youAreOwed - youOwe;
+  useEffect(() => {
+    if (!groupId) return;
 
-  // Get unique categories
-  const allCategories = ['All', ...new Set(groupExpenses.map(exp => exp.category))];
-  
-  // Filter expenses by category
-  const filteredExpenses = activeTab === 'All' 
-    ? groupExpenses 
-    : groupExpenses.filter(exp => exp.category === activeTab);
+    setLoading(true);
+    
+    const unsubscribeGroup = subscribeToGroup(groupId, (fetchedGroup) => {
+      if (fetchedGroup) {
+        setGroup(fetchedGroup);
+        setGroupName(fetchedGroup.name);
+      }
+      setLoading(false);
+    });
 
-  const getGreeting = () => {
-    const hour = new Date().getHours();
-    if (hour < 12) return 'Good morning';
-    if (hour < 17) return 'Good afternoon';
-    return 'Good evening';
+    const unsubscribeExpenses = subscribeToGroupExpenses(groupId, (expenses) => {
+      setGroupExpenses(expenses);
+    });
+
+    return () => {
+      unsubscribeGroup();
+      unsubscribeExpenses();
+    };
+  }, [groupId]);
+
+  useEffect(() => {
+    if (!group || !user) return;
+    calculateBalances();
+  }, [groupExpenses, group, user]);
+
+  const calculateBalances = () => {
+    const memberBalances: Record<string, number> = {};
+    
+    group?.members.forEach(member => {
+      memberBalances[member.uid] = 0;
+    });
+    
+    groupExpenses.forEach(expense => {
+      const paidBy = expense.paidBy;
+      const amount = expense.amount;
+      const memberCount = group?.members.length || 1;
+      const splitAmount = amount / memberCount;
+      
+      memberBalances[paidBy] += amount - splitAmount;
+      
+      group?.members.forEach(member => {
+        if (member.uid !== paidBy) {
+          memberBalances[member.uid] -= splitAmount;
+        }
+      });
+    });
+    
+    const yourBalance = memberBalances[user?.uid || ''] || 0;
+    const youAreOwed = yourBalance > 0 ? yourBalance : 0;
+    const youOwe = yourBalance < 0 ? Math.abs(yourBalance) : 0;
+    const netBalance = youAreOwed - youOwe;
+    
+    const balances: { memberName: string; amount: number; type: 'owe' | 'owed' }[] = [];
+    
+    group?.members.forEach(member => {
+      if (member.uid !== user?.uid) {
+        const balance = memberBalances[member.uid] || 0;
+        if (balance > 0) {
+          balances.push({
+            memberName: member.name,
+            amount: balance,
+            type: 'owed',
+          });
+        } else if (balance < 0) {
+          balances.push({
+            memberName: member.name,
+            amount: Math.abs(balance),
+            type: 'owe',
+          });
+        }
+      }
+    });
+    
+    setBalanceData({
+      youOwe,
+      youAreOwed,
+      netBalance,
+      balances,
+    });
   };
 
-  const getRelativeDate = (dateStr: string) => {
-    const date = new Date(dateStr);
-    const today = new Date();
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
+  const filteredExpenses = selectedMember === 'all'
+    ? groupExpenses
+    : groupExpenses.filter(exp => exp.paidBy === selectedMember);
 
-    if (date.toDateString() === today.toDateString()) return 'Today';
-    if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const updateGroupName = async () => {
+    if (!group || !groupName.trim()) return;
+    
+    try {
+      await updateGroup(group.id, { name: groupName.trim() });
+      setIsEditingName(false);
+      Alert.alert('Success', 'Group name updated');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to update group name');
+    }
   };
 
-  const handleDeleteExpense = (id: string) => {
+  const confirmDeleteExpense = (expenseId: string) => {
     Alert.alert(
       'Delete Expense',
-      'Are you sure you want to delete this expense?',
+      'Are you sure you want to remove this expense from the group?',
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Delete', style: 'destructive', onPress: () => deleteExpense(id) }
+        { 
+          text: 'Delete', 
+          style: 'destructive', 
+          onPress: async () => {
+            try {
+              await deleteGroupExpense(groupId, expenseId);
+              Alert.alert('Success', 'Expense deleted');
+            } catch (error) {
+              Alert.alert('Error', 'Failed to delete expense');
+            }
+          }
+        },
       ]
     );
   };
 
-  const handleLongPress = (id: string) => {
-    handleDeleteExpense(id);
-  };
-
-  const renderExpenseItem = ({ item }: { item: any }) => (
+  const renderExpenseItem = ({ item }: { item: GroupExpense }) => (
     <TouchableOpacity
       style={styles.expenseItem}
-      onLongPress={() => handleLongPress(item.id)}
+      onLongPress={() => confirmDeleteExpense(item.id)}
       activeOpacity={0.7}
       delayLongPress={500}
     >
@@ -153,135 +204,213 @@ export default function HomeScreen() {
       <View style={styles.expInfo}>
         <Text style={styles.expName}>{item.title}</Text>
         <Text style={styles.expSub}>
-          {getRelativeDate(item.date)} · {item.category}
-          {item.paidBy && <Text style={styles.paidByText}> · Paid by {item.paidBy}</Text>}
+          {new Date(item.date).toLocaleDateString()} · {item.category}
+          {item.paidByName && <Text style={styles.paidByText}> · Paid by {item.paidByName}</Text>}
         </Text>
       </View>
       <Text style={[styles.expAmount, styles.amountRed]}>- {formatRs(item.amount)}</Text>
     </TouchableOpacity>
   );
 
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#1D9E75" />
+          <Text style={styles.loadingText}>Loading group...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!group) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+            <Text style={styles.backButtonText}>←</Text>
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Group Not Found</Text>
+          <View style={{ width: 40 }} />
+        </View>
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyEmoji}>😕</Text>
+          <Text style={styles.emptyText}>Group not found</Text>
+          <TouchableOpacity onPress={() => router.back()} style={styles.goBackButton}>
+            <Text style={styles.goBackButtonText}>Go Back</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.safeArea}>
-      {/* Header with Greeting and Editable Person Name - NO SCREEN TITLE HERE */}
-      <View style={styles.topBar}>
-        <View>
-          <View style={styles.greetingRow}>
-            <Text style={styles.topBarName}>{getGreeting()}, </Text>
-            {isEditingPerson ? (
-              <TextInput
-                style={styles.personNameInput}
-                value={personName}
-                onChangeText={setPersonName}
-                onBlur={() => setIsEditingPerson(false)}
-                onSubmitEditing={() => setIsEditingPerson(false)}
-                autoFocus
-                maxLength={20}
-              />
-            ) : (
-              <TouchableOpacity onPress={() => setIsEditingPerson(true)}>
-                <View style={styles.personNameRow}>
-                  <Text style={styles.personName}>{personName}</Text>
-                  <Text style={styles.editIcon}>✎</Text>
-                </View>
+      <FlatList
+        data={filteredExpenses}
+        keyExtractor={(item) => item.id}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.listContent}
+        ListHeaderComponent={
+          <>
+            <View style={styles.header}>
+              <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+                <Text style={styles.backButtonText}>←</Text>
               </TouchableOpacity>
-            )}
-          </View>
-          
-          {/* Show group name if in a group, otherwise nothing */}
-          {currentGroup && (
-            <Text style={styles.groupNameText}>{currentGroup.name}</Text>
-          )}
-        </View>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>
-            {personName.substring(0, 2).toUpperCase()}
-          </Text>
-        </View>
-      </View>
+              
+              {isEditingName ? (
+                <View style={styles.editNameContainer}>
+                  <TextInput
+                    style={styles.groupNameInput}
+                    value={groupName}
+                    onChangeText={setGroupName}
+                    autoFocus
+                  />
+                  <TouchableOpacity onPress={updateGroupName}>
+                    <Text style={styles.saveButton}>Save</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => setIsEditingName(false)}>
+                    <Text style={styles.cancelButton}>Cancel</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <TouchableOpacity 
+                  style={styles.groupNameContainer}
+                  onPress={() => setIsEditingName(true)}
+                >
+                  <Text style={styles.groupName}>{group.name}</Text>
+                  <Text style={styles.editIcon}>✎</Text>
+                </TouchableOpacity>
+              )}
+              
+              <View style={{ width: 40 }} />
+            </View>
 
-      {/* Net Worth Card */}
-      <View style={styles.netCard}>
-        <Text style={styles.netLabel}>Total expense this month</Text>
-        <Text style={styles.netAmount}>{formatRs(totalSpent)}</Text>
-        {currentGroup && (
-          <Text style={styles.netSubLabel}>
-            Split among {memberCount} members
-          </Text>
-        )}
-        <View style={styles.netRow}>
-          <View style={[styles.netPill, styles.netPillWhite]}>
-            <Text style={[styles.netPillLabel, styles.netPillLabelWhite]}>You are owed</Text>
-            <Text style={[styles.netPillVal, styles.netPillValWhite]}>{formatRs(youAreOwed)}</Text>
-          </View>
-          <View style={[styles.netPill, styles.netPillRed]}>
-            <Text style={[styles.netPillLabel, styles.netPillLabelRed]}>You owe</Text>
-            <Text style={[styles.netPillVal, styles.netPillValRed]}>{formatRs(youOwe)}</Text>
-          </View>
-        </View>
-      </View>
+            <View style={styles.inviteCodeCard}>
+              <Text style={styles.inviteCodeLabel}>Invite Code</Text>
+              <Text style={styles.inviteCode}>{group.inviteCode}</Text>
+              <Text style={styles.inviteCodeHint}>Share this code with friends to join</Text>
+            </View>
 
-      {/* Expenses Section Header */}
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>My expenses</Text>
-        <TouchableOpacity>
-          <Text style={styles.sectionLink}>see all</Text>
-        </TouchableOpacity>
-      </View>
+            <View style={styles.balanceCard}>
+              <Text style={styles.balanceTitle}>Balance Summary</Text>
+              
+              {balanceData.youOwe > 0 && (
+                <View style={styles.balanceRowOwe}>
+                  <Text style={styles.balanceLabel}>You owe</Text>
+                  <Text style={styles.balanceAmountOwe}>{formatRs(balanceData.youOwe)}</Text>
+                </View>
+              )}
+              
+              {balanceData.youAreOwed > 0 && (
+                <View style={styles.balanceRowOwed}>
+                  <Text style={styles.balanceLabel}>You are owed</Text>
+                  <Text style={styles.balanceAmountOwed}>{formatRs(balanceData.youAreOwed)}</Text>
+                </View>
+              )}
+              
+              {balanceData.balances.length > 0 && (
+                <View style={styles.balanceDetails}>
+                  <Text style={styles.balanceDetailsTitle}>Breakdown:</Text>
+                  {balanceData.balances.map((bal, idx) => (
+                    <View key={idx} style={styles.balanceDetailRow}>
+                      <Text style={styles.balanceDetailText}>
+                        {bal.type === 'owe' ? 'You owe' : 'Owes you'}
+                      </Text>
+                      <Text style={styles.balanceDetailName}>{bal.memberName}</Text>
+                      <Text style={[
+                        styles.balanceDetailAmount,
+                        bal.type === 'owe' ? styles.oweText : styles.owedText
+                      ]}>
+                        {formatRs(bal.amount)}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+              
+              {balanceData.youOwe === 0 && balanceData.youAreOwed === 0 && (
+                <View style={styles.settledContainer}>
+                  <Text style={styles.settledEmoji}>✅</Text>
+                  <Text style={styles.settledText}>All settled up!</Text>
+                </View>
+              )}
+            </View>
 
-      {/* Category Tabs */}
-      <View style={styles.tabRow}>
-        {allCategories.slice(0, 5).map((tab) => (
-          <TouchableOpacity
-            key={tab}
-            style={[styles.tab, activeTab === tab && styles.activeTab]}
-            onPress={() => setActiveTab(tab)}
-          >
-            <Text style={[styles.tabText, activeTab === tab && styles.activeTabText]}>
-              {tab}
+            <View style={styles.memberFilterSection}>
+              <Text style={styles.memberFilterLabel}>Filter by:</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.memberFilterScroll}>
+                <TouchableOpacity
+                  style={[styles.memberFilterChip, selectedMember === 'all' && styles.memberFilterChipActive]}
+                  onPress={() => setSelectedMember('all')}
+                >
+                  <Text style={[styles.memberFilterText, selectedMember === 'all' && styles.memberFilterTextActive]}>
+                    All
+                  </Text>
+                </TouchableOpacity>
+                {group.members.map(member => (
+                  <TouchableOpacity
+                    key={member.uid}
+                    style={[styles.memberFilterChip, selectedMember === member.uid && styles.memberFilterChipActive]}
+                    onPress={() => setSelectedMember(member.uid)}
+                  >
+                    <Text style={[styles.memberFilterText, selectedMember === member.uid && styles.memberFilterTextActive]}>
+                      {member.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+
+            <View style={styles.statsCard}>
+              <View style={styles.statItem}>
+                <Text style={styles.statValue}>{group.members.length}</Text>
+                <Text style={styles.statLabel}>Members</Text>
+              </View>
+              <View style={styles.statDivider} />
+              <View style={styles.statItem}>
+                <Text style={styles.statValue}>{groupExpenses.length}</Text>
+                <Text style={styles.statLabel}>Expenses</Text>
+              </View>
+              <View style={styles.statDivider} />
+              <View style={styles.statItem}>
+                <Text style={styles.statValue}>{formatRs(groupExpenses.reduce((sum, e) => sum + e.amount, 0))}</Text>
+                <Text style={styles.statLabel}>Total</Text>
+              </View>
+            </View>
+          </>
+        }
+        renderItem={renderExpenseItem}
+        ListEmptyComponent={
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyEmoji}>📭</Text>
+            <Text style={styles.emptyTitle}>No expenses yet</Text>
+            <Text style={styles.emptySubtitle}>
+              Add your first expense to this group
             </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+            <TouchableOpacity 
+              style={styles.addExpenseBtn}
+              onPress={() => router.push({
+                pathname: '/add-expense',
+                params: { groupId: group.id }
+              } as any)}
+            >
+              <Text style={styles.addExpenseBtnText}>+ Add Expense</Text>
+            </TouchableOpacity>
+          </View>
+        }
+        ItemSeparatorComponent={() => <View style={styles.separator} />}
+      />
 
-      {/* Expenses List */}
-      {filteredExpenses.length === 0 ? (
-        <View style={styles.emptyContainer}>
-          <Text style={styles.emptyEmoji}>📭</Text>
-          <Text style={styles.emptyTitle}>No expenses yet</Text>
-          <Text style={styles.emptySubtitle}>
-            Tap the "+ Add Expense" button to add your first expense
-          </Text>
-        </View>
-      ) : (
-        <FlatList
-          data={filteredExpenses}
-          keyExtractor={(item) => item.id}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.listContent}
-          renderItem={renderExpenseItem}
-          ItemSeparatorComponent={() => <View style={styles.separator} />}
-        />
-      )}
-
-      {/* Add Expense Button */}
-      <View style={styles.fabContainer}>
-        <TouchableOpacity 
-          style={styles.fabBtn}
-          onPress={() => router.push({
-            pathname: '/add-expense',
-            params: { personName: personName, groupId: groupId }
-          } as any)}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.fabBtnText}>+ Add Expense</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Long press hint */}
-      <Text style={styles.longPressHint}>
-        💡 Long press any expense to delete it
-      </Text>
+      <TouchableOpacity 
+        style={styles.fab}
+        onPress={() => router.push({
+          pathname: '/add-expense',
+          params: { groupId: group.id }
+        } as any)}
+      >
+        <Text style={styles.fabText}>+</Text>
+      </TouchableOpacity>
     </SafeAreaView>
   );
 }
@@ -289,178 +418,279 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#F1F5F9',
   },
-  topBar: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 12,
+  listContent: {
+    paddingBottom: 80,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: '#8E8E93',
+  },
+  header: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    backgroundColor: '#1D9E75',
   },
-  greetingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-  },
-  topBarName: {
-    fontSize: 13,
-    color: '#8E8E93',
-  },
-  personNameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  personName: {
-    fontSize: 13,
-    color: '#8E8E93',
-    fontWeight: '500',
-  },
-  personNameInput: {
-    fontSize: 13,
-    color: '#8E8E93',
-    fontWeight: '500',
-    padding: 0,
-    margin: 0,
-    borderBottomWidth: 1,
-    borderBottomColor: '#1D9E75',
-    minWidth: 80,
-  },
-  groupNameText: {
-    fontSize: 20,
+  headerTitle: {
+    fontSize: 18,
     fontWeight: '600',
-    color: '#1C1C1E',
-    marginTop: 4,
+    color: '#fff',
   },
-  editIcon: {
-    fontSize: 12,
-    color: '#1D9E75',
-    marginLeft: 6,
-  },
-  avatar: {
+  backButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#EEEDFE',
+    backgroundColor: 'rgba(255,255,255,0.2)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarText: {
-    fontSize: 14,
+  backButtonText: {
+    color: '#fff',
+    fontSize: 24,
     fontWeight: '600',
-    color: '#3C3489',
   },
-  netCard: {
-    marginHorizontal: 16,
-    marginBottom: 16,
-    backgroundColor: '#1D9E75',
-    borderRadius: 14,
-    padding: 16,
-  },
-  netLabel: {
-    fontSize: 11,
-    color: '#9FE1CB',
-    marginBottom: 4,
-  },
-  netAmount: {
-    fontSize: 28,
-    fontWeight: '500',
-    color: '#E1F5EE',
-    marginBottom: 12,
-  },
-  netSubLabel: {
-    fontSize: 10,
-    color: '#9FE1CB',
-    marginBottom: 12,
-    marginTop: -8,
-  },
-  netRow: {
+  groupNameContainer: {
     flexDirection: 'row',
-    gap: 10,
+    alignItems: 'center',
+    gap: 8,
   },
-  netPill: {
-    flex: 1,
-    backgroundColor: '#0F6E56',
-    borderRadius: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
+  groupName: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#fff',
   },
-  netPillLabel: {
-    fontSize: 10,
-    color: '#5DCAA5',
-    marginBottom: 2,
-  },
-  netPillVal: {
+  editIcon: {
     fontSize: 14,
-    fontWeight: '500',
-    color: '#E1F5EE',
+    color: 'rgba(255,255,255,0.8)',
   },
-  netPillWhite: {
-    backgroundColor: '#FFFFFF',
+  editNameContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+    marginHorizontal: 12,
+  },
+  groupNameInput: {
+    flex: 1,
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#fff',
+    paddingVertical: 4,
+  },
+  saveButton: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  cancelButton: {
+    color: '#fff',
+    fontSize: 14,
+    opacity: 0.7,
+  },
+  inviteCodeCard: {
+    backgroundColor: '#fff',
+    marginHorizontal: 16,
+    marginTop: 16,
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
     borderWidth: 1,
     borderColor: '#E5E5EA',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
-  netPillLabelWhite: {
+  inviteCodeLabel: {
+    fontSize: 12,
     color: '#8E8E93',
+    marginBottom: 4,
   },
-  netPillValWhite: {
+  inviteCode: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#1D9E75',
+    letterSpacing: 4,
+  },
+  inviteCodeHint: {
+    fontSize: 11,
+    color: '#8E8E93',
+    marginTop: 8,
+  },
+  balanceCard: {
+    backgroundColor: '#fff',
+    marginHorizontal: 16,
+    marginTop: 16,
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E5E5EA',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  balanceTitle: {
+    fontSize: 14,
+    fontWeight: '700',
     color: '#1C1C1E',
+    marginBottom: 12,
   },
-  netPillRed: {
-    backgroundColor: '#FFEBEE',
-  },
-  netPillLabelRed: {
-    color: '#D32F2F',
-  },
-  netPillValRed: {
-    color: '#B71C1C',
-  },
-  sectionHeader: {
+  balanceRowOwe: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  balanceRowOwed: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  balanceLabel: {
+    fontSize: 14,
+    color: '#8E8E93',
+  },
+  balanceAmountOwe: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#EF4444',
+  },
+  balanceAmountOwed: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#10B981',
+  },
+  balanceDetails: {
+    marginTop: 12,
+  },
+  balanceDetailsTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#8E8E93',
     marginBottom: 8,
   },
-  sectionTitle: {
+  balanceDetailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 6,
+  },
+  balanceDetailText: {
+    fontSize: 13,
+    color: '#8E8E93',
+    width: 70,
+  },
+  balanceDetailName: {
+    flex: 1,
     fontSize: 13,
     fontWeight: '500',
     color: '#1C1C1E',
   },
-  sectionLink: {
-    fontSize: 11,
-    color: '#1D9E75',
+  balanceDetailAmount: {
+    fontSize: 13,
+    fontWeight: '600',
   },
-  tabRow: {
+  oweText: {
+    color: '#EF4444',
+  },
+  owedText: {
+    color: '#10B981',
+  },
+  settledContainer: {
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  settledEmoji: {
+    fontSize: 32,
+    marginBottom: 8,
+  },
+  settledText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#10B981',
+  },
+  memberFilterSection: {
+    marginHorizontal: 16,
+    marginTop: 16,
+  },
+  memberFilterLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#8E8E93',
+    marginBottom: 8,
+  },
+  memberFilterScroll: {
     flexDirection: 'row',
-    gap: 8,
+  },
+  memberFilterChip: {
     paddingHorizontal: 16,
-    marginBottom: 14,
-    flexWrap: 'wrap',
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: '#F1F5F9',
+    marginRight: 8,
   },
-  tab: {
-    paddingVertical: 5,
-    paddingHorizontal: 14,
-    borderRadius: 99,
-    borderWidth: 0.5,
-    borderColor: '#E5E5EA',
-    backgroundColor: '#FFFFFF',
-  },
-  activeTab: {
+  memberFilterChipActive: {
     backgroundColor: '#1D9E75',
-    borderColor: '#1D9E75',
   },
-  tabText: {
+  memberFilterText: {
+    fontSize: 13,
+    color: '#64748B',
+  },
+  memberFilterTextActive: {
+    color: '#fff',
+    fontWeight: '600',
+  },
+  statsCard: {
+    flexDirection: 'row',
+    backgroundColor: '#fff',
+    marginHorizontal: 16,
+    marginTop: 16,
+    marginBottom: 16,
+    padding: 16,
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  statItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  statValue: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1C1C1E',
+  },
+  statLabel: {
     fontSize: 12,
     color: '#8E8E93',
+    marginTop: 4,
   },
-  activeTabText: {
-    color: '#E1F5EE',
-    fontWeight: '500',
-  },
-  listContent: {
-    paddingBottom: 120,
+  statDivider: {
+    width: 1,
+    backgroundColor: '#E5E5EA',
+    marginHorizontal: 16,
   },
   expenseItem: {
     flexDirection: 'row',
@@ -468,11 +698,11 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingVertical: 12,
     paddingHorizontal: 16,
+    backgroundColor: '#fff',
   },
   separator: {
     height: 0.5,
     backgroundColor: '#E5E5EA',
-    marginLeft: 64,
   },
   expIcon: {
     width: 40,
@@ -514,6 +744,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 60,
     paddingHorizontal: 32,
+    backgroundColor: '#fff',
+    marginHorizontal: 16,
+    borderRadius: 16,
+    marginTop: 20,
   },
   emptyEmoji: {
     fontSize: 48,
@@ -529,36 +763,53 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#8E8E93',
     textAlign: 'center',
+    marginBottom: 20,
   },
-  fabContainer: {
+  emptyText: {
+    fontSize: 16,
+    color: '#8E8E93',
+    marginBottom: 20,
+  },
+  addExpenseBtn: {
+    backgroundColor: '#1D9E75',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+  },
+  addExpenseBtnText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  goBackButton: {
+    backgroundColor: '#1D9E75',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+  },
+  goBackButtonText: {
+    color: '#fff',
+    fontWeight: '600',
+  },
+  fab: {
     position: 'absolute',
     bottom: 20,
-    left: 16,
-    right: 16,
-  },
-  fabBtn: {
-    width: '100%',
-    paddingVertical: 14,
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     backgroundColor: '#1D9E75',
-    borderRadius: 12,
     alignItems: 'center',
+    justifyContent: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 5,
   },
-  fabBtnText: {
-    fontSize: 15,
+  fabText: {
+    fontSize: 28,
+    color: '#fff',
     fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  longPressHint: {
-    textAlign: 'center',
-    fontSize: 11,
-    color: '#8E8E93',
-    paddingHorizontal: 16,
-    marginTop: 8,
-    marginBottom: 80,
   },
 });

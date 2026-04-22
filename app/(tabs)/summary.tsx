@@ -1,22 +1,108 @@
-import { useBudgetStore } from '@/src/store/budgetStore'
-import { useExpenseStore } from '@/src/store/expenseStore'
+// app/summary.tsx
+import { Group, GroupExpense, subscribeToGroupExpenses, subscribeToUserGroups } from '@/src/services/groupService'
+import { subscribeToUserExpenses, UserExpense } from '@/src/services/userExpenseService'
+import { useAppSelector } from '@/src/store/hooks'
 import { colors } from '@/src/theme/colors'
 import { Category } from '@/src/types'
 import { LinearGradient } from 'expo-linear-gradient'
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import { ScrollView, StyleSheet, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 const catColors: Record<Category, string> = {
-  Food: '#6C63FF', Transport: '#378ADD', Shopping: '#2ECC71',
-  Bills: '#F39C12', Health: '#E74C3C', Other: '#888780',
+  Food: '#F59E0B', 
+  Transport: '#3B82F6', 
+  Shopping: '#8B5CF6',
+  Bills: '#10B981', 
+  Health: '#EF4444', 
+  Other: '#6B7280',
+}
+
+// Combined expense type
+type CombinedExpense = {
+  id: string;
+  title: string;
+  amount: number;
+  category: Category;
+  date: string;
+  type: 'personal' | 'group';
 }
 
 const SummaryScreen = () => {
-  const { monthlyLimit } = useBudgetStore()
-  const { expenses: allExpenses } = useExpenseStore()
+  const { user } = useAppSelector(state => state.auth);
+  const { monthlyLimit } = useAppSelector(state => state.budget);
+  const [personalExpenses, setPersonalExpenses] = useState<UserExpense[]>([])
+  const [groupExpenses, setGroupExpenses] = useState<GroupExpense[]>([])
+  const [groups, setGroups] = useState<Group[]>([])
+  const [allExpenses, setAllExpenses] = useState<CombinedExpense[]>([])
+
+  // Load personal expenses
+  useEffect(() => {
+    if (!user) return;
+    const unsubscribe = subscribeToUserExpenses(user.uid, (fetched) => {
+      setPersonalExpenses(fetched)
+    })
+    return () => unsubscribe()
+  }, [user])
+
+  // Load groups and their expenses
+  useEffect(() => {
+    if (!user) return;
+
+    const unsubscribeGroups = subscribeToUserGroups(user.uid, (fetchedGroups) => {
+      setGroups(fetchedGroups)
+      
+      // Subscribe to expenses for each group
+      const unsubscribes: (() => void)[] = []
+      
+      fetchedGroups.forEach(group => {
+        const unsubscribeExpenses = subscribeToGroupExpenses(group.id, (expenses) => {
+          setGroupExpenses(prev => {
+            const otherGroups = prev.filter(e => e.groupId !== group.id)
+            return [...otherGroups, ...expenses]
+          })
+        })
+        unsubscribes.push(unsubscribeExpenses)
+      })
+      
+      return () => {
+        unsubscribes.forEach(unsub => unsub())
+      }
+    })
+
+    return () => unsubscribeGroups()
+  }, [user])
+
+  // Combine personal and group expenses (only where user paid)
+  useEffect(() => {
+    const combined: CombinedExpense[] = [
+      ...personalExpenses.map(exp => ({
+        id: exp.id,
+        title: exp.title,
+        amount: exp.amount,
+        category: exp.category as Category,
+        date: exp.date,
+        type: 'personal' as const,
+      })),
+      ...groupExpenses
+        .filter(exp => exp.paidBy === user?.uid)
+        .map(exp => ({
+          id: exp.id,
+          title: exp.title,
+          amount: exp.amount,
+          category: exp.category as Category,
+          date: exp.date,
+          type: 'group' as const,
+        })),
+    ]
+    
+    combined.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    setAllExpenses(combined)
+  }, [personalExpenses, groupExpenses, user])
+
   const now = new Date()
 
+  // Filter current month expenses
   const expenses = allExpenses.filter(e => {
     const d = new Date(e.date)
     return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
@@ -35,8 +121,8 @@ const SummaryScreen = () => {
 
   const total = expenses.reduce((s, e) => s + e.amount, 0)
   const maxWeekly = Math.max(...weeklyTotals, 1)
-  const budgetPercent = Math.min((total / monthlyLimit) * 100, 100)
-  const budgetColor = budgetPercent < 60 ? colors.income : budgetPercent < 85 ? colors.warning : colors.expense
+  const budgetPercent = monthlyLimit > 0 ? Math.min((total / monthlyLimit) * 100, 100) : 0
+  const budgetColor = budgetPercent < 60 ? '#10B981' : budgetPercent < 85 ? '#F59E0B' : '#EF4444'
   const topCategory = Object.entries(byCategory).sort((a, b) => b[1] - a[1])[0]
   const avgExpense = expenses.length > 0 ? total / expenses.length : 0
 
@@ -46,7 +132,7 @@ const SummaryScreen = () => {
 
         {/* ── Header ── */}
         <LinearGradient
-          colors={['#7C6FFF', '#4A44B5']}
+          colors={['#1D9E75', '#16825E', '#0F6648']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={styles.header}
@@ -123,7 +209,7 @@ const SummaryScreen = () => {
                 <View style={styles.barTrack}>
                   <LinearGradient
                     colors={val > 0
-                      ? [colors.primary, colors.primary + 'AA']
+                      ? ['#1D9E75', '#16825E']
                       : ['#E8ECF0', '#E8ECF0']}
                     style={[styles.barFill, {
                       height: `${(val / maxWeekly) * 100}%`,
@@ -185,7 +271,7 @@ const SummaryScreen = () => {
         {/* ── Total Card ── */}
         <Text style={styles.sectionLabel}>MONTH TOTAL</Text>
         <LinearGradient
-          colors={['#7C6FFF', '#4A44B5']}
+          colors={['#1D9E75', '#16825E', '#0F6648']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={styles.totalCard}
@@ -263,7 +349,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#EEF2F7',
-    shadowColor: '#6C63FF',
+    shadowColor: '#1D9E75',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
     shadowRadius: 8,
@@ -273,7 +359,7 @@ const styles = StyleSheet.create({
   statVal: {
     fontSize: 15,
     fontWeight: '800',
-    color: colors.primary,
+    color: '#1D9E75',
     marginBottom: 3,
   },
   statLbl: {
@@ -303,7 +389,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#EEF2F7',
     marginHorizontal: 16,
-    shadowColor: '#6C63FF',
+    shadowColor: '#1D9E75',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
     shadowRadius: 10,
@@ -350,7 +436,7 @@ const styles = StyleSheet.create({
   },
   barAmt: {
     fontSize: 9,
-    color: colors.primary,
+    color: '#1D9E75',
     marginBottom: 4,
     fontWeight: '700',
   },
@@ -373,7 +459,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   barLabelActive: {
-    color: colors.primary,
+    color: '#1D9E75',
     fontWeight: '800',
   },
 
@@ -428,7 +514,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     padding: 24,
     alignItems: 'center',
-    shadowColor: colors.primary,
+    shadowColor: '#1D9E75',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.25,
     shadowRadius: 16,
