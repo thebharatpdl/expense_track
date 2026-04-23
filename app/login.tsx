@@ -1,6 +1,6 @@
 // app/login.tsx
 import { useAppDispatch, useAppSelector } from '@/src/store/hooks';
-import { login } from '@/src/store/slice/authSlice';
+import { login } from '@/src/store/slices/authSlice';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import React, { useState } from 'react';

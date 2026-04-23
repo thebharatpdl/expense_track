@@ -2,7 +2,7 @@
 import { auth } from '@/src/config/firebase';
 import { store } from '@/src/store';
 import { useAppDispatch, useAppSelector } from '@/src/store/hooks';
-import { clearUser, setLoading, setUser } from '@/src/store/slice/authSlice';
+import { clearUser, setLoading, setUser } from '@/src/store/slices/authSlice';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack, router, useRootNavigationState } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -15,6 +15,9 @@ import { Provider } from 'react-redux';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
+// 👇 SET THIS TO true TO BYPASS LOGIN, false FOR REAL LOGIN
+const SKIP_LOGIN = true;
+
 export const unstable_settings = {
   initialRouteName: '(tabs)',
 };
@@ -26,6 +29,12 @@ function AuthWrapper({ children }: { children: React.ReactNode }) {
   const navigationState = useRootNavigationState();
 
   useEffect(() => {
+    // Skip Firebase auth check in dev mode
+    if (SKIP_LOGIN) {
+      dispatch(setLoading(false));
+      return;
+    }
+    
     const unsubscribe = auth.onAuthStateChanged((user) => {
       if (user) {
         dispatch(setUser(user));
@@ -39,6 +48,9 @@ function AuthWrapper({ children }: { children: React.ReactNode }) {
   }, [dispatch]);
 
   useEffect(() => {
+    // Skip navigation redirect in dev mode
+    if (SKIP_LOGIN) return;
+    
     // Only navigate after the root layout is mounted
     if (!navigationState?.key) return;
     
@@ -47,7 +59,7 @@ function AuthWrapper({ children }: { children: React.ReactNode }) {
     }
   }, [isAuthenticated, loading, navigationState?.key]);
 
-  if (loading) {
+  if (loading && !SKIP_LOGIN) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
         <ActivityIndicator size="large" color="#1D9E75" />
