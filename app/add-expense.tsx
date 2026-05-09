@@ -34,12 +34,12 @@ const categoryIcons: Record<Category, string> = {
 };
 
 const categoryColors: Record<Category, string> = {
-  Food: '#F59E0B',
+  Food: '#F97316',
   Transport: '#3B82F6',
   Shopping: '#8B5CF6',
   Bills: '#10B981',
   Health: '#EF4444',
-  Other: '#6B7280',
+  Other: '#64748B',
 };
 
 export default function AddExpenseScreen() {
@@ -102,7 +102,7 @@ export default function AddExpenseScreen() {
             setTitle(''); setDescription(''); setAmount('');
             setCategory('Food'); setDate(new Date());
           }},
-          { text: 'Go Home', onPress: () => router.back() }
+          { text: 'Go Back', onPress: () => router.back() }
         ]
       );
     } catch (error: any) {
@@ -114,32 +114,41 @@ export default function AddExpenseScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
-      <StatusBar style="light" backgroundColor="#1D9E75" translucent={false} />
+      <StatusBar style="light" />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Simplified Header */}
+          {/* Dark Header Section */}
           <LinearGradient
-            colors={['#1D9E75', '#16825E', '#0F6648']}
+            colors={['#0F1923', '#1A2432']}
             start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.header}
+            end={{ x: 0, y: 1 }}
+            style={styles.headerSection}
           >
-            <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-              <Text style={styles.backButtonText}>←</Text>
-            </TouchableOpacity>
-            <Text style={styles.headerTitle}>Add Expense</Text>
-            <View style={styles.headerRight} />
+            <View style={styles.headerRow}>
+              <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+                <Text style={styles.backButtonText}>←</Text>
+              </TouchableOpacity>
+              <Text style={styles.headerTitle}>Add Expense</Text>
+              <View style={styles.headerSpacer} />
+            </View>
+
+            <View style={styles.headerInfo}>
+              <Text style={styles.headerIcon}>💰</Text>
+              <Text style={styles.headerSubtitle}>
+                {groupId ? 'Add a group expense' : 'Track your spending'}
+              </Text>
+            </View>
           </LinearGradient>
 
-          {/* Form Card */}
-          <View style={styles.formCard}>
+          {/* Light Content Section */}
+          <View style={styles.contentSection}>
             {/* Title */}
             <View style={styles.inputGroup}>
               <Text style={styles.label}>Title <Text style={styles.required}>*</Text></Text>
@@ -152,6 +161,7 @@ export default function AddExpenseScreen() {
                   value={title}
                   onChangeText={setTitle}
                   maxLength={50}
+                  selectionColor="#3B82F6"
                 />
               </View>
             </View>
@@ -169,6 +179,7 @@ export default function AddExpenseScreen() {
                   multiline
                   numberOfLines={3}
                   textAlignVertical="top"
+                  selectionColor="#3B82F6"
                 />
               </View>
             </View>
@@ -184,6 +195,7 @@ export default function AddExpenseScreen() {
                   keyboardType="decimal-pad"
                   value={amount}
                   onChangeText={setAmount}
+                  selectionColor="#3B82F6"
                 />
               </View>
             </View>
@@ -199,14 +211,21 @@ export default function AddExpenseScreen() {
                       key={cat}
                       style={[
                         styles.categoryCard,
-                        isActive && { backgroundColor: categoryColors[cat] + '20', borderColor: categoryColors[cat] }
+                        isActive && { 
+                          backgroundColor: categoryColors[cat] + '15', 
+                          borderColor: categoryColors[cat] 
+                        }
                       ]}
                       onPress={() => setCategory(cat)}
                     >
                       <Text style={styles.categoryIcon}>{categoryIcons[cat]}</Text>
-                      <Text style={[styles.categoryText, isActive && { color: categoryColors[cat], fontWeight: '700' }]}>
+                      <Text style={[
+                        styles.categoryText, 
+                        isActive && { color: categoryColors[cat], fontWeight: '700' }
+                      ]}>
                         {cat}
                       </Text>
+                      {isActive && <Text style={[styles.checkIcon, { color: categoryColors[cat] }]}>✓</Text>}
                     </TouchableOpacity>
                   );
                 })}
@@ -217,10 +236,14 @@ export default function AddExpenseScreen() {
             <View style={styles.inputGroup}>
               <Text style={styles.label}>Date</Text>
               <TouchableOpacity style={styles.dateButton} onPress={() => setShowDatePicker(true)}>
-                <Text style={styles.dateIcon}>📅</Text>
-                <View>
+                <View style={styles.dateIconWrap}>
+                  <Text style={styles.dateIcon}>📅</Text>
+                </View>
+                <View style={styles.dateInfo}>
                   <Text style={styles.dateDay}>{date.toLocaleDateString('en-US', { weekday: 'long' })}</Text>
-                  <Text style={styles.dateFull}>{date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</Text>
+                  <Text style={styles.dateFull}>
+                    {date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+                  </Text>
                 </View>
                 <Text style={styles.dateChevron}>›</Text>
               </TouchableOpacity>
@@ -243,14 +266,16 @@ export default function AddExpenseScreen() {
             disabled={isLoading}
           >
             <LinearGradient
-              colors={['#1D9E75', '#16825E', '#0F6648']}
+              colors={['#3B82F6', '#1D4ED8']}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
               style={styles.saveGradient}
             >
-              {isLoading ? <ActivityIndicator color="#fff" /> : (
+              {isLoading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
                 <>
-                  <Text style={styles.saveIcon}>💰</Text>
+                  <Text style={styles.saveIcon}>💾</Text>
                   <Text style={styles.saveText}>Save Expense</Text>
                 </>
               )}
@@ -263,49 +288,98 @@ export default function AddExpenseScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#F8FAFC' },
-  scrollContent: { paddingBottom: 40 },
+  safeArea: { 
+    flex: 1, 
+    backgroundColor: '#0F1923' 
+  },
+  scrollContent: { 
+    paddingBottom: 40,
+    backgroundColor: '#F1F5F9'
+  },
 
-  // Header
-  header: {
+  // Dark Header Section
+  headerSection: {
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    paddingBottom: 24,
+  },
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 20,
-    borderBottomLeftRadius: 28,
-    borderBottomRightRadius: 28,
-    marginBottom: 20,
+    marginBottom: 16,
   },
   backButton: {
     width: 40,
     height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  backButtonText: { color: '#fff', fontSize: 24, fontWeight: '600' },
-  headerTitle: { fontSize: 20, fontWeight: '700', color: '#fff' },
-  headerRight: { width: 40 },
+  backButtonText: { 
+    color: '#F0F4FF', 
+    fontSize: 22, 
+    fontWeight: '500' 
+  },
+  headerTitle: { 
+    fontSize: 18, 
+    fontWeight: '700', 
+    color: '#F0F4FF',
+    letterSpacing: -0.3,
+  },
+  headerSpacer: { 
+    width: 40 
+  },
+  headerInfo: {
+    alignItems: 'center',
+  },
+  headerIcon: {
+    fontSize: 32,
+    marginBottom: 8,
+  },
+  headerSubtitle: {
+    fontSize: 13,
+    color: '#8BA3C7',
+    letterSpacing: 0.3,
+  },
 
-  // Form Card
-  formCard: {
-    backgroundColor: '#fff',
+  // Light Content Section
+  contentSection: {
+    backgroundColor: '#FFFFFF',
     marginHorizontal: 16,
     borderRadius: 24,
     padding: 20,
+    marginTop: -12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
+    shadowOpacity: 0.06,
     shadowRadius: 12,
     elevation: 4,
   },
-  inputGroup: { marginBottom: 20 },
-  label: { fontSize: 14, fontWeight: '600', color: '#0F172A', marginBottom: 6 },
-  required: { color: '#EF4444' },
-  optional: { color: '#64748B', fontWeight: '400' },
+
+  // Form Groups
+  inputGroup: { 
+    marginBottom: 20 
+  },
+  label: { 
+    fontSize: 13, 
+    fontWeight: '600', 
+    color: '#64748B', 
+    marginBottom: 6,
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
+  },
+  required: { 
+    color: '#EF4444' 
+  },
+  optional: { 
+    color: '#94A3B8', 
+    fontWeight: '400',
+    textTransform: 'none',
+  },
+
+  // Inputs
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -315,22 +389,59 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
     paddingHorizontal: 14,
   },
-  inputIcon: { fontSize: 18, marginRight: 10, color: '#64748B' },
-  input: { flex: 1, fontSize: 16, color: '#0F172A', paddingVertical: 12 },
-  textAreaContainer: { alignItems: 'flex-start', paddingVertical: 10 },
-  textArea: { flex: 1, fontSize: 16, color: '#0F172A', minHeight: 80, textAlignVertical: 'top' },
+  inputIcon: { 
+    fontSize: 16, 
+    marginRight: 10, 
+    color: '#64748B' 
+  },
+  input: { 
+    flex: 1, 
+    fontSize: 15, 
+    color: '#1E293B', 
+    paddingVertical: 13 
+  },
+  textAreaContainer: { 
+    alignItems: 'flex-start', 
+    paddingVertical: 10 
+  },
+  textArea: {
+    flex: 1,
+    fontSize: 15,
+    color: '#1E293B',
+    minHeight: 80,
+    textAlignVertical: 'top',
+  },
+
+  // Amount
   amountContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#F8FAFC',
     borderRadius: 14,
     borderWidth: 2,
-    borderColor: '#1D9E7530',
+    borderColor: '#BFDBFE',
     paddingHorizontal: 16,
   },
-  currencySymbol: { fontSize: 28, fontWeight: '800', color: '#1D9E75', marginRight: 8 },
-  amountInput: { flex: 1, fontSize: 32, fontWeight: '800', color: '#0F172A', paddingVertical: 10 },
-  categoriesGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  currencySymbol: { 
+    fontSize: 28, 
+    fontWeight: '800', 
+    color: '#3B82F6', 
+    marginRight: 8 
+  },
+  amountInput: { 
+    flex: 1, 
+    fontSize: 32, 
+    fontWeight: '800', 
+    color: '#1E293B', 
+    paddingVertical: 10 
+  },
+
+  // Categories
+  categoriesGrid: { 
+    flexDirection: 'row', 
+    flexWrap: 'wrap', 
+    gap: 10 
+  },
   categoryCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -342,27 +453,92 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
     gap: 8,
   },
-  categoryIcon: { fontSize: 18 },
-  categoryText: { fontSize: 13, fontWeight: '600', color: '#64748B' },
+  categoryIcon: { 
+    fontSize: 18 
+  },
+  categoryText: { 
+    fontSize: 13, 
+    fontWeight: '600', 
+    color: '#64748B' 
+  },
+  checkIcon: {
+    fontSize: 12,
+    fontWeight: '700',
+    marginLeft: 2,
+  },
+
+  // Date
   dateButton: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#F8FAFC',
     borderRadius: 14,
-    padding: 12,
+    padding: 14,
     borderWidth: 1,
     borderColor: '#E2E8F0',
     gap: 12,
   },
-  dateIcon: { fontSize: 24, marginHorizontal: 4 },
-  dateDay: { fontSize: 14, fontWeight: '700', color: '#0F172A' },
-  dateFull: { fontSize: 12, color: '#64748B', marginTop: 2 },
-  dateChevron: { fontSize: 22, color: '#64748B', marginLeft: 'auto' },
+  dateIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dateIcon: { 
+    fontSize: 20 
+  },
+  dateInfo: {
+    flex: 1,
+  },
+  dateDay: { 
+    fontSize: 14, 
+    fontWeight: '700', 
+    color: '#1E293B' 
+  },
+  dateFull: { 
+    fontSize: 12, 
+    color: '#64748B', 
+    marginTop: 2 
+  },
+  dateChevron: { 
+    fontSize: 24, 
+    color: '#94A3B8',
+    fontWeight: '300',
+  },
 
   // Save Button
-  saveButton: { marginHorizontal: 16, marginTop: 8, borderRadius: 18, overflow: 'hidden', shadowColor: '#1D9E75', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.3, shadowRadius: 10, elevation: 5 },
-  saveButtonDisabled: { opacity: 0.6 },
-  saveGradient: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, gap: 10 },
-  saveIcon: { fontSize: 20 },
-  saveText: { color: '#fff', fontSize: 17, fontWeight: '700', letterSpacing: 0.3 },
+  saveButton: { 
+    marginHorizontal: 16, 
+    marginTop: 20, 
+    borderRadius: 16, 
+    overflow: 'hidden',
+    shadowColor: '#3B82F6',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  saveButtonDisabled: { 
+    opacity: 0.6,
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  saveGradient: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    justifyContent: 'center', 
+    paddingVertical: 16, 
+    gap: 10 
+  },
+  saveIcon: { 
+    fontSize: 20 
+  },
+  saveText: { 
+    color: '#fff', 
+    fontSize: 16, 
+    fontWeight: '700', 
+    letterSpacing: 0.3 
+  },
 });

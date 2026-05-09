@@ -25,26 +25,26 @@ const formatRs = (amount: number) => {
 
 const getCategoryIcon = (category: string): string => {
   const icons: Record<string, string> = {
-    Food: '🍔',
-    Transport: '🚗',
-    Shopping: '🛒',
-    Bills: '💡',
-    Health: '💊',
-    Other: '📦',
+    Food: '🍔', Transport: '🚗', Shopping: '🛒',
+    Bills: '💡', Health: '💊', Other: '📦',
   };
   return icons[category] || '📝';
 };
 
-const getCategoryBgColor = (category: string): string => {
+const getCategoryColor = (category: string): string => {
   const colors: Record<string, string> = {
-    Food: '#FAEEDA',
-    Transport: '#E6F1FB',
-    Shopping: '#FFE4E1',
-    Bills: '#E0F7FA',
-    Health: '#FCEBEB',
-    Other: '#F2F2F7',
+    Food: '#FFF7ED', Transport: '#EFF6FF', Shopping: '#FEF2F2',
+    Bills: '#F0FDF4', Health: '#FDF2F8', Other: '#F8FAFC',
   };
-  return colors[category] || '#F2F2F7';
+  return colors[category] || '#F8FAFC';
+};
+
+const getCategoryAccent = (category: string): string => {
+  const colors: Record<string, string> = {
+    Food: '#F97316', Transport: '#3B82F6', Shopping: '#EF4444',
+    Bills: '#10B981', Health: '#EC4899', Other: '#64748B',
+  };
+  return colors[category] || '#64748B';
 };
 
 interface BalanceResult {
@@ -62,10 +62,7 @@ export default function GroupExpenseScreen() {
   const [loading, setLoading] = useState(true);
   const [selectedMember, setSelectedMember] = useState<string>('all');
   const [balanceData, setBalanceData] = useState<BalanceResult>({
-    youOwe: 0,
-    youAreOwed: 0,
-    netBalance: 0,
-    balances: [],
+    youOwe: 0, youAreOwed: 0, netBalance: 0, balances: [],
   });
 
   useEffect(() => {
@@ -78,10 +75,7 @@ export default function GroupExpenseScreen() {
     const unsubscribeExpenses = subscribeToGroupExpenses(groupId, (expenses) => {
       setGroupExpenses(expenses);
     });
-    return () => {
-      unsubscribeGroup();
-      unsubscribeExpenses();
-    };
+    return () => { unsubscribeGroup(); unsubscribeExpenses(); };
   }, [groupId]);
 
   useEffect(() => {
@@ -91,9 +85,7 @@ export default function GroupExpenseScreen() {
 
   const calculateBalances = () => {
     const memberBalances: Record<string, number> = {};
-    group?.members.forEach(member => {
-      memberBalances[member.uid] = 0;
-    });
+    group?.members.forEach(member => { memberBalances[member.uid] = 0; });
     groupExpenses.forEach(expense => {
       const paidBy = expense.paidBy;
       const amount = expense.amount;
@@ -107,7 +99,6 @@ export default function GroupExpenseScreen() {
     const yourBalance = memberBalances[user?.uid || ''] || 0;
     const youAreOwed = yourBalance > 0 ? yourBalance : 0;
     const youOwe = yourBalance < 0 ? Math.abs(yourBalance) : 0;
-    const netBalance = youAreOwed - youOwe;
     const balances: { memberName: string; amount: number; type: 'owe' | 'owed' }[] = [];
     group?.members.forEach(member => {
       if (member.uid !== user?.uid) {
@@ -116,7 +107,7 @@ export default function GroupExpenseScreen() {
         else if (balance < 0) balances.push({ memberName: member.name, amount: Math.abs(balance), type: 'owe' });
       }
     });
-    setBalanceData({ youOwe, youAreOwed, netBalance, balances });
+    setBalanceData({ youOwe, youAreOwed, netBalance: youAreOwed - youOwe, balances });
   };
 
   const filteredExpenses = selectedMember === 'all'
@@ -124,56 +115,60 @@ export default function GroupExpenseScreen() {
     : groupExpenses.filter(exp => exp.paidBy === selectedMember);
 
   const confirmDeleteExpense = (expenseId: string) => {
-    Alert.alert(
-      'Delete Expense',
-      'Remove this expense?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteGroupExpense(groupId, expenseId);
-              Alert.alert('Success', 'Expense deleted');
-            } catch (error) {
-              Alert.alert('Error', 'Failed to delete expense');
-            }
-          },
+    Alert.alert('Delete Expense', 'Remove this expense?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete', style: 'destructive',
+        onPress: async () => {
+          try {
+            await deleteGroupExpense(groupId, expenseId);
+            Alert.alert('Success', 'Expense deleted');
+          } catch {
+            Alert.alert('Error', 'Failed to delete expense');
+          }
         },
-      ]
-    );
+      },
+    ]);
   };
 
   const renderExpenseItem = ({ item }: { item: GroupExpense }) => (
     <TouchableOpacity
       style={styles.expenseItem}
       onLongPress={() => confirmDeleteExpense(item.id)}
-      activeOpacity={0.7}
+      activeOpacity={0.75}
       delayLongPress={500}
     >
-      <View style={[styles.expIcon, { backgroundColor: getCategoryBgColor(item.category) }]}>
+      <View style={[styles.expIcon, { backgroundColor: getCategoryColor(item.category) }]}>
         <Text style={styles.expIconText}>{getCategoryIcon(item.category)}</Text>
       </View>
       <View style={styles.expInfo}>
         <Text style={styles.expName}>{item.title}</Text>
-        <Text style={styles.expSub}>
-          {new Date(item.date).toLocaleDateString()} · {item.category}
-          {item.paidByName && <Text style={styles.paidByText}> · Paid by {item.paidByName}</Text>}
-        </Text>
+        <View style={styles.expMetaRow}>
+          <Text style={styles.expDate}>{new Date(item.date).toLocaleDateString()}</Text>
+          <View style={styles.expDot} />
+          <Text style={styles.expCategory}>{item.category}</Text>
+          {item.paidByName && (
+            <>
+              <View style={styles.expDot} />
+              <Text style={styles.paidByText}>{item.paidByName}</Text>
+            </>
+          )}
+        </View>
       </View>
-      <Text style={[styles.expAmount, styles.amountRed]}>-{formatRs(item.amount)}</Text>
+      <View style={styles.expAmountCol}>
+        <Text style={styles.expAmount}>{formatRs(item.amount)}</Text>
+      </View>
     </TouchableOpacity>
   );
 
   if (loading) {
     return (
       <SafeAreaView style={styles.safeArea} edges={['top']}>
-        <StatusBar style="light" backgroundColor="#1D9E75" translucent={false} />
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#1D9E75" />
+        <StatusBar style="light" />
+        <LinearGradient colors={['#0F1923', '#1A2432']} style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#3B82F6" />
           <Text style={styles.loadingText}>Loading group...</Text>
-        </View>
+        </LinearGradient>
       </SafeAreaView>
     );
   }
@@ -181,28 +176,29 @@ export default function GroupExpenseScreen() {
   if (!group) {
     return (
       <SafeAreaView style={styles.safeArea} edges={['top']}>
-        <StatusBar style="light" backgroundColor="#1D9E75" translucent={false} />
-        <View style={styles.errorHeader}>
+        <StatusBar style="light" />
+        <LinearGradient colors={['#0F1923', '#1A2432']} style={styles.errorContainer}>
           <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
             <Text style={styles.backButtonText}>←</Text>
           </TouchableOpacity>
-          <Text style={styles.errorTitle}>Group Not Found</Text>
-          <View style={{ width: 40 }} />
-        </View>
-        <View style={styles.emptyContainer}>
           <Text style={styles.emptyEmoji}>😕</Text>
-          <Text style={styles.emptyText}>Group not found</Text>
+          <Text style={styles.errorTitle}>Group Not Found</Text>
           <TouchableOpacity onPress={() => router.back()} style={styles.goBackButton}>
-            <Text style={styles.goBackButtonText}>Go Back</Text>
+            <LinearGradient colors={['#3B82F6', '#1D4ED8']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.goBackGradient}>
+              <Text style={styles.goBackButtonText}>Go Back</Text>
+            </LinearGradient>
           </TouchableOpacity>
-        </View>
+        </LinearGradient>
       </SafeAreaView>
     );
   }
 
+  const totalSpent = groupExpenses.reduce((sum, e) => sum + e.amount, 0);
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
-      <StatusBar style="light" backgroundColor="#1D9E75" translucent={false} />
+      <StatusBar style="light" />
+
       <FlatList
         data={filteredExpenses}
         keyExtractor={(item) => item.id}
@@ -210,126 +206,109 @@ export default function GroupExpenseScreen() {
         contentContainerStyle={styles.listContent}
         ListHeaderComponent={
           <>
+            {/* Dark Header Section */}
             <LinearGradient
-              colors={['#1D9E75', '#16825E', '#0F6648']}
+              colors={['#0F1923', '#1A2432']}
               start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.header}
+              end={{ x: 0, y: 1 }}
+              style={styles.headerSection}
             >
               <View style={styles.headerRow}>
                 <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
                   <Text style={styles.backButtonText}>←</Text>
                 </TouchableOpacity>
-                <Text style={styles.groupName}>{group.name}</Text>
+                <View style={styles.headerCenter}>
+                  <Text style={styles.groupName}>{group.name}</Text>
+                  <Text style={styles.groupMeta}>{group.members.length} members</Text>
+                </View>
                 <View style={styles.headerSpacer} />
               </View>
+
               <View style={styles.inviteChip}>
-                <Text style={styles.inviteLabel}>Invite code:</Text>
+                <Text style={styles.inviteLabel}>INVITE CODE</Text>
+                <View style={styles.inviteSeparator} />
                 <Text style={styles.inviteCode}>{group.inviteCode}</Text>
               </View>
             </LinearGradient>
 
-            {/* Balance Summary Card */}
-            {/* <View style={styles.balanceCard}>
-              <Text style={styles.balanceTitle}>Balance Summary</Text>
-              <View style={styles.balanceMain}>
-                {balanceData.youOwe > 0 && (
-                  <View style={styles.balanceItem}>
-                    <Text style={styles.balanceItemLabel}>You owe</Text>
-                    <Text style={styles.balanceItemAmountOwe}>{formatRs(balanceData.youOwe)}</Text>
+            {/* Light Content Section */}
+            <View style={styles.contentSection}>
+              {/* Stats Row */}
+              <View style={styles.statsRow}>
+                <View style={styles.statCard}>
+                  <View style={styles.statIconWrap}>
+                    <Text style={styles.statIcon}>👥</Text>
                   </View>
-                )}
-                {balanceData.youAreOwed > 0 && (
-                  <View style={styles.balanceItem}>
-                    <Text style={styles.balanceItemLabel}>You are owed</Text>
-                    <Text style={styles.balanceItemAmountOwed}>{formatRs(balanceData.youAreOwed)}</Text>
-                  </View>
-                )}
-                {balanceData.youOwe === 0 && balanceData.youAreOwed === 0 && (
-                  <View style={styles.settledContainer}>
-                    <Text style={styles.settledEmoji}>✅</Text>
-                    <Text style={styles.settledText}>All settled up!</Text>
-                  </View>
-                )}
-              </View>
-              {balanceData.balances.length > 0 && (
-                <View style={styles.balanceDetails}>
-                  <Text style={styles.balanceDetailsTitle}>Breakdown</Text>
-                  {balanceData.balances.map((bal, idx) => (
-                    <View key={idx} style={styles.balanceDetailRow}>
-                      <Text style={styles.balanceDetailText}>
-                        {bal.type === 'owe' ? 'You owe' : 'Owes you'}
-                      </Text>
-                      <Text style={styles.balanceDetailName}>{bal.memberName}</Text>
-                      <Text style={[
-                        styles.balanceDetailAmount,
-                        bal.type === 'owe' ? styles.oweText : styles.owedText
-                      ]}>
-                        {formatRs(bal.amount)}
-                      </Text>
-                    </View>
-                  ))}
+                  <Text style={styles.statValue}>{group.members.length}</Text>
+                  <Text style={styles.statLabel}>Members</Text>
                 </View>
-              )}
-            </View> */}
+                <View style={styles.statCard}>
+                  <View style={styles.statIconWrap}>
+                    <Text style={styles.statIcon}>🧾</Text>
+                  </View>
+                  <Text style={styles.statValue}>{groupExpenses.length}</Text>
+                  <Text style={styles.statLabel}>Expenses</Text>
+                </View>
+                <View style={[styles.statCard, styles.statCardAccent]}>
+                  <View style={[styles.statIconWrap, styles.statIconWrapAccent]}>
+                    <Text style={styles.statIcon}>💰</Text>
+                  </View>
+                  <Text style={[styles.statValue, styles.statValueAccent]}>{formatRs(totalSpent)}</Text>
+                  <Text style={[styles.statLabel, styles.statLabelAccent]}>Total Spent</Text>
+                </View>
+              </View>
 
-            {/* Member Filter */}
-            <View style={styles.memberFilterSection}>
-              <Text style={styles.memberFilterLabel}>Filter by member</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.memberFilterScroll}>
-                <TouchableOpacity
-                  style={[styles.filterChip, selectedMember === 'all' && styles.filterChipActive]}
-                  onPress={() => setSelectedMember('all')}
-                >
-                  <Text style={[styles.filterChipText, selectedMember === 'all' && styles.filterChipTextActive]}>All</Text>
-                </TouchableOpacity>
-                {group.members.map(member => (
+   
+
+              {/* Member Filter */}
+              <View style={styles.sectionBlock}>
+                <Text style={styles.sectionTitle}>Filter by member</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll}>
                   <TouchableOpacity
-                    key={member.uid}
-                    style={[styles.filterChip, selectedMember === member.uid && styles.filterChipActive]}
-                    onPress={() => setSelectedMember(member.uid)}
+                    style={[styles.filterChip, selectedMember === 'all' && styles.filterChipActive]}
+                    onPress={() => setSelectedMember('all')}
                   >
-                    <Text style={[styles.filterChipText, selectedMember === member.uid && styles.filterChipTextActive]}>
-                      {member.name}
-                    </Text>
+                    <Text style={[styles.filterChipText, selectedMember === 'all' && styles.filterChipTextActive]}>All</Text>
                   </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </View>
+                  {group.members.map(member => (
+                    <TouchableOpacity
+                      key={member.uid}
+                      style={[styles.filterChip, selectedMember === member.uid && styles.filterChipActive]}
+                      onPress={() => setSelectedMember(member.uid)}
+                    >
+                      <View style={styles.filterAvatar}>
+                        <Text style={styles.filterAvatarText}>{member.name.charAt(0).toUpperCase()}</Text>
+                      </View>
+                      <Text style={[styles.filterChipText, selectedMember === member.uid && styles.filterChipTextActive]}>
+                        {member.name}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
 
-            {/* Stats Card */}
-            <View style={styles.statsCard}>
-              <View style={styles.statItem}>
-                <Text style={styles.statValue}>{group.members.length}</Text>
-                <Text style={styles.statLabel}>Members</Text>
+              {/* Expenses Header */}
+              <View style={styles.expensesHeader}>
+                <View>
+                  <Text style={styles.sectionTitle}>Expenses</Text>
+                  <Text style={styles.expensesCount}>{filteredExpenses.length} item{filteredExpenses.length !== 1 ? 's' : ''}</Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.addExpenseBtn}
+                  onPress={() => router.push({ pathname: '/add-expense', params: { groupId: group.id } } as any)}
+                >
+                 
+                </TouchableOpacity>
               </View>
-              <View style={styles.statDivider} />
-              <View style={styles.statItem}>
-                <Text style={styles.statValue}>{groupExpenses.length}</Text>
-                <Text style={styles.statLabel}>Expenses</Text>
-              </View>
-              <View style={styles.statDivider} />
-              <View style={styles.statItem}>
-                <Text style={styles.statValue}>{formatRs(groupExpenses.reduce((sum, e) => sum + e.amount, 0))}</Text>
-                <Text style={styles.statLabel}>Total</Text>
-              </View>
-            </View>
-
-            {/* Expenses Header */}
-            <View style={styles.expensesHeader}>
-              <Text style={styles.expensesTitle}>Expenses</Text>
-              <TouchableOpacity
-                onPress={() => router.push({ pathname: '/add-expense', params: { groupId: group.id } } as any)}
-              >
-                <Text style={styles.addButton}>+ Add</Text>
-              </TouchableOpacity>
             </View>
           </>
         }
         renderItem={renderExpenseItem}
         ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyEmoji}>📭</Text>
+          <View style={styles.emptyExpenseContainer}>
+            <View style={styles.emptyIconWrap}>
+              <Text style={styles.emptyEmoji}>📭</Text>
+            </View>
             <Text style={styles.emptyTitle}>No expenses yet</Text>
             <Text style={styles.emptySubtitle}>Tap + to add your first expense</Text>
           </View>
@@ -337,103 +316,486 @@ export default function GroupExpenseScreen() {
         ItemSeparatorComponent={() => <View style={styles.separator} />}
       />
 
-      {/* Floating Action Button */}
+      {/* FAB */}
       <TouchableOpacity
         style={styles.fab}
         onPress={() => router.push({ pathname: '/add-expense', params: { groupId: group.id } } as any)}
+        activeOpacity={0.85}
       >
-        <Text style={styles.fabText}>+</Text>
+        <LinearGradient colors={['#3B82F6', '#1D4ED8']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.fabGradient}>
+          <Text style={styles.fabText}>+</Text>
+        </LinearGradient>
       </TouchableOpacity>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#F8FAFC' },
-  listContent: { paddingBottom: 100 },
+  safeArea: { 
+    flex: 1, 
+    backgroundColor: '#0F1923' 
+  },
+  listContent: { 
+    paddingBottom: 100,
+    backgroundColor: '#F1F5F9'
+  },
 
-  // Header
-  header: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 16, borderBottomLeftRadius: 32, borderBottomRightRadius: 32 },
-  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
-  backButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
-  backButtonText: { color: '#fff', fontSize: 24, fontWeight: '600' },
-  groupName: { fontSize: 18, fontWeight: '700', color: '#fff', textAlign: 'center', flex: 1 },
-  headerSpacer: { width: 40 },
-  inviteChip: { flexDirection: 'row', alignSelf: 'center', backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 16, paddingVertical: 6, borderRadius: 30, gap: 8 },
-  inviteLabel: { color: 'rgba(255,255,255,0.8)', fontSize: 12 },
-  inviteCode: { color: '#fff', fontSize: 14, fontWeight: '700', letterSpacing: 1 },
+  // Dark Header Section
+  headerSection: {
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    paddingBottom: 28,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 18,
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  backButtonText: { 
+    color: '#F0F4FF', 
+    fontSize: 22, 
+    fontWeight: '500' 
+  },
+  headerCenter: { 
+    flex: 1, 
+    alignItems: 'center' 
+  },
+  groupName: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#F0F4FF',
+    letterSpacing: -0.3,
+  },
+  groupMeta: {
+    fontSize: 11,
+    color: '#8BA3C7',
+    marginTop: 2,
+  },
+  headerSpacer: { 
+    width: 40 
+  },
+  inviteChip: {
+    flexDirection: 'row',
+    alignSelf: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(59, 130, 246, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(59, 130, 246, 0.3)',
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    borderRadius: 30,
+    gap: 10,
+  },
+  inviteLabel: {
+    color: 'rgba(240, 244, 255, 0.6)',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1.2,
+  },
+  inviteSeparator: {
+    width: 1,
+    height: 12,
+    backgroundColor: 'rgba(59, 130, 246, 0.3)',
+  },
+  inviteCode: {
+    color: '#3B82F6',
+    fontSize: 15,
+    fontWeight: '800',
+    letterSpacing: 3,
+  },
+
+  // Light Content Section
+  contentSection: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    marginTop: -12,
+  },
+
+  // Stats
+  statsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 12,
+  },
+  statCard: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  statCardAccent: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+  },
+  statIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  statIconWrapAccent: {
+    backgroundColor: '#DBEAFE',
+  },
+  statIcon: { 
+    fontSize: 16 
+  },
+  statValue: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#1E293B',
+    letterSpacing: -0.5,
+  },
+  statValueAccent: { 
+    color: '#1E40AF' 
+  },
+  statLabel: {
+    fontSize: 10,
+    color: '#64748B',
+    marginTop: 3,
+    fontWeight: '500',
+  },
+  statLabelAccent: { 
+    color: '#3B82F6' 
+  },
 
   // Balance Card
-  balanceCard: { backgroundColor: '#fff', marginHorizontal: 16, marginTop: 20, padding: 16, borderRadius: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 3 },
-  balanceTitle: { fontSize: 16, fontWeight: '700', color: '#0F172A', marginBottom: 12 },
-  balanceMain: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: 8 },
-  balanceItem: { alignItems: 'center' },
-  balanceItemLabel: { fontSize: 12, color: '#64748B', marginBottom: 4 },
-  balanceItemAmountOwe: { fontSize: 18, fontWeight: '700', color: '#EF4444' },
-  balanceItemAmountOwed: { fontSize: 18, fontWeight: '700', color: '#10B981' },
-  settledContainer: { alignItems: 'center', paddingVertical: 8 },
-  settledEmoji: { fontSize: 28, marginBottom: 4 },
-  settledText: { fontSize: 14, fontWeight: '600', color: '#10B981' },
-  balanceDetails: { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#E2E8F0' },
-  balanceDetailsTitle: { fontSize: 12, fontWeight: '600', color: '#64748B', marginBottom: 8 },
-  balanceDetailRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6 },
-  balanceDetailText: { fontSize: 13, color: '#64748B', width: 70 },
-  balanceDetailName: { flex: 1, fontSize: 13, fontWeight: '500', color: '#0F172A' },
-  balanceDetailAmount: { fontSize: 13, fontWeight: '600' },
-  oweText: { color: '#EF4444' },
-  owedText: { color: '#10B981' },
+  balanceCard: {
+    flexDirection: 'row',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  balanceItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  balanceDivider: {
+    width: 1,
+    backgroundColor: '#E2E8F0',
+  },
+  balanceLabel: {
+    fontSize: 11,
+    color: '#64748B',
+    fontWeight: '600',
+    marginBottom: 4,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  balanceAmount: {
+    fontSize: 18,
+    fontWeight: '700',
+    letterSpacing: -0.3,
+  },
+  balanceOwe: {
+    color: '#EF4444',
+  },
+  balanceOwed: {
+    color: '#10B981',
+  },
 
-  // Member Filter
-  memberFilterSection: { marginTop: 20, marginBottom: 12, paddingHorizontal: 16 },
-  memberFilterLabel: { fontSize: 12, fontWeight: '600', color: '#64748B', marginBottom: 8 },
-  memberFilterScroll: { flexDirection: 'row' },
-  filterChip: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: '#F1F5F9', marginRight: 8 },
-  filterChipActive: { backgroundColor: '#1D9E75' },
-  filterChipText: { fontSize: 13, color: '#64748B', fontWeight: '500' },
-  filterChipTextActive: { color: '#fff' },
+  // Section Blocks
+  sectionBlock: {
+    paddingTop: 16,
+  },
+  sectionTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#64748B',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+    marginBottom: 10,
+  },
+  filterScroll: { 
+    marginBottom: 4 
+  },
+  expensesHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 20,
+    paddingBottom: 8,
+  },
+  expensesCount: {
+    fontSize: 12,
+    color: '#94A3B8',
+    marginTop: 2,
+  },
+  addExpenseBtn: {
+    borderRadius: 12,
+    overflow: 'hidden',
+    shadowColor: '#3B82F6',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  addExpenseGradient: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  addExpenseBtnText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '700',
+  },
 
-  // Stats Card
-  statsCard: { flexDirection: 'row', backgroundColor: '#fff', marginHorizontal: 16, padding: 16, borderRadius: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 3, marginBottom: 16 },
-  statItem: { flex: 1, alignItems: 'center' },
-  statValue: { fontSize: 20, fontWeight: '700', color: '#0F172A' },
-  statLabel: { fontSize: 12, color: '#64748B', marginTop: 4 },
-  statDivider: { width: 1, backgroundColor: '#E2E8F0', marginHorizontal: 16 },
-
-  // Expenses Header
-  expensesHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, marginBottom: 12 },
-  expensesTitle: { fontSize: 16, fontWeight: '700', color: '#0F172A' },
-  addButton: { fontSize: 14, color: '#1D9E75', fontWeight: '600' },
+  // Filter Chips
+  filterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 24,
+    backgroundColor: '#FFFFFF',
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  filterChipActive: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#3B82F6',
+  },
+  filterAvatar: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#DBEAFE',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filterAvatarText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#3B82F6',
+  },
+  filterChipText: {
+    fontSize: 13,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  filterChipTextActive: {
+    color: '#2563EB',
+    fontWeight: '700',
+  },
 
   // Expense Items
-  expenseItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 16, backgroundColor: '#fff' },
-  separator: { height: 0.5, backgroundColor: '#E2E8F0', marginLeft: 68 },
-  expIcon: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
-  expIconText: { fontSize: 20 },
-  expInfo: { flex: 1 },
-  expName: { fontSize: 15, fontWeight: '600', color: '#0F172A', marginBottom: 2 },
-  expSub: { fontSize: 12, color: '#64748B' },
-  paidByText: { color: '#1D9E75', fontWeight: '500' },
-  expAmount: { fontSize: 15, fontWeight: '700', color: '#EF4444' },
-  amountRed: { color: '#EF4444' },
+  expenseItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    backgroundColor: '#FFFFFF',
+    marginHorizontal: 16,
+    marginTop: 8,
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  separator: { 
+    height: 0 
+  },
+  expIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  expIconText: { 
+    fontSize: 20 
+  },
+  expInfo: { 
+    flex: 1 
+  },
+  expName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1E293B',
+    marginBottom: 4,
+    letterSpacing: -0.2,
+  },
+  expMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 5,
+  },
+  expDate: { 
+    fontSize: 12, 
+    color: '#94A3B8' 
+  },
+  expDot: {
+    width: 3,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: '#CBD5E1',
+  },
+  expCategory: { 
+    fontSize: 12, 
+    color: '#94A3B8' 
+  },
+  paidByText: { 
+    fontSize: 12, 
+    color: '#10B981', 
+    fontWeight: '600' 
+  },
+  expAmountCol: { 
+    alignItems: 'flex-end' 
+  },
+  expAmount: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#EF4444',
+    letterSpacing: -0.3,
+  },
 
-  // Empty State
-  emptyContainer: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60, paddingHorizontal: 32, backgroundColor: '#fff', marginHorizontal: 16, borderRadius: 20, marginTop: 20 },
-  emptyEmoji: { fontSize: 48, marginBottom: 16 },
-  emptyTitle: { fontSize: 18, fontWeight: '700', color: '#1E293B', marginBottom: 8 },
-  emptySubtitle: { fontSize: 14, color: '#64748B', textAlign: 'center' },
-  emptyText: { fontSize: 16, color: '#64748B', marginBottom: 20 },
-  goBackButton: { backgroundColor: '#1D9E75', paddingVertical: 12, paddingHorizontal: 24, borderRadius: 12 },
-  goBackButtonText: { color: '#fff', fontWeight: '600' },
-
-  // Error header
-  errorHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 16, backgroundColor: '#1D9E75' },
-  errorTitle: { fontSize: 18, fontWeight: '600', color: '#fff' },
+  // Empty States
+  errorContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+    gap: 16,
+  },
+  emptyExpenseContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 48,
+    paddingHorizontal: 32,
+    backgroundColor: '#FFFFFF',
+    marginHorizontal: 16,
+    borderRadius: 20,
+    marginTop: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  emptyIconWrap: {
+    width: 64,
+    height: 64,
+    borderRadius: 20,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  emptyEmoji: { 
+    fontSize: 48,
+    marginBottom: 12,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1E293B',
+    marginBottom: 8,
+  },
+  emptySubtitle: { 
+    fontSize: 14, 
+    color: '#64748B', 
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  errorTitle: { 
+    fontSize: 18, 
+    fontWeight: '700', 
+    color: '#F0F4FF',
+    marginBottom: 8,
+  },
+  goBackButton: {
+    borderRadius: 14,
+    overflow: 'hidden',
+    shadowColor: '#3B82F6',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  goBackGradient: {
+    paddingVertical: 14,
+    paddingHorizontal: 32,
+  },
+  goBackButtonText: { 
+    color: '#fff', 
+    fontWeight: '700', 
+    fontSize: 15 
+  },
 
   // Loading
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  loadingText: { marginTop: 12, fontSize: 14, color: '#64748B' },
+  loadingContainer: { 
+    flex: 1, 
+    justifyContent: 'center', 
+    alignItems: 'center' 
+  },
+  loadingText: { 
+    marginTop: 12, 
+    fontSize: 14, 
+    color: '#8BA3C7' 
+  },
 
   // FAB
-  fab: { position: 'absolute', bottom: 20, right: 20, width: 56, height: 56, borderRadius: 28, backgroundColor: '#1D9E75', alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 5 },
-  fabText: { fontSize: 28, color: '#fff', fontWeight: '600' },
+  fab: {
+    position: 'absolute',
+    bottom: 24,
+    right: 20,
+    borderRadius: 18,
+    overflow: 'hidden',
+    shadowColor: '#3B82F6',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.45,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  fabGradient: {
+    width: 56,
+    height: 56,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fabText: { 
+    fontSize: 28, 
+    color: '#fff', 
+    fontWeight: '300', 
+    marginTop: -2 
+  },
 });
