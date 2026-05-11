@@ -102,7 +102,7 @@ export default function RegisterScreen() {
                   <Text style={styles.iconEmoji}>📝</Text>
                 </LinearGradient>
               </View>
-              <Text style={styles.appName}>ExpenseTracker</Text>
+              <Text style={styles.appName}>FinTrack</Text>
               <Text style={styles.appTagline}>Smart money management</Text>
             </View>
           </LinearGradient>
